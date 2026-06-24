@@ -1,0 +1,19 @@
+# Flutter / Dart (artefactos generados)
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+
+# IDE
+**/.idea/
+**/*.iml
+.vscode/
+
+# SO
+.DS_Store
+Thumbs.db
+
+# APKs locales
+*.apk
