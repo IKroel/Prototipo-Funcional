@@ -11,8 +11,6 @@
 ![Firmware](https://img.shields.io/badge/firmware-v2.8-blue?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/ESP32-NimBLE-informational?style=for-the-badge&logo=espressif)
 ![GPS](https://img.shields.io/badge/GPS-GV75CG-success?style=for-the-badge)
-![App](https://img.shields.io/badge/app-Flutter-02569B?style=for-the-badge&logo=flutter)
-![Estado](https://img.shields.io/badge/estado-prototipo%20validado-orange?style=for-the-badge)
 
 </div>
 
@@ -37,8 +35,7 @@ ordena al tracker por **serial** (comando AT). La app identifica el equipo por
 BLE, se autentica y puede **deshabilitar** el corte.
 
 > [!NOTE]
-> Este es un **prototipo funcional validado**. La app productiva la reharía el
-> equipo de Desarrollo (ver [§12 · Temas sugeridos](#-12--temas-sugeridos-firmware--app)).
+> Este es un **prototipo**, se entregaran las indicaciones y sugerencias para poder integrar una app movil en relacion a la funcionalidad del firmware y hardware.
 
 ---
 
@@ -60,10 +57,10 @@ BLE, se autentica y puede **deshabilitar** el corte.
 
 | | Ítem |
 |:--:|------|
-| ✅ | Prototipo funcional validado (módulo + fuente + conversor serial + app). |
-| ✅ | Equipo GPS definido: **GV75CG** (se descartó el Teltonika FMC130). |
-| ✅ | Firmware **V2.8** (`wt_gateway_v2_serial`): corte por serial, advertising anónimo, config en NVS, standby, keep-alive, `>GET_PROFILE`, AUTO_DETECT. |
-| ⏳ | **Pendiente:** pruebas en terreno con señuelo, homologación GV75CG, Flash Encryption, perfiles de AUTO_DETECT, app productiva. |
+| ✅ | Prototipo (Modulo ESP32 + Conversor Serial + GPS + App Movil). |
+| ✅ | Compatibilidad con GPS: **GV75CG**. |
+| ✅ | Firmware **V2.8**. |
+| ⏳ | **Pendiente:** Flash Encryption y App Productiva |
 
 ---
 
@@ -71,16 +68,15 @@ BLE, se autentica y puede **deshabilitar** el corte.
 
 ```
 Prototipo Funcional/
-├── README.md                      Este documento (índice + detalle completo)
+├── README.md                      
 ├── docs/
-│   ├── CONTEXTO_COWORK.md         Arquitectura y protocolo (referencia extendida)
-│   ├── README_BUILD.md            Build del APK + Flash Encryption + provisioning
-│   └── resumen_firmware_v2.docx   Documento de diseño V2
+│   ├── CONTEXTO_COWORK.md         Arquitectura y Protocolo
+│   ├── README_BUILD.md            Build del APK (Solo Testing Local, para Pruebas de Comunicacion)
 ├── firmware/
 │   ├── README.md                  Índice de versiones de firmware
-│   ├── v1/                        Legacy (corte por GPIO23/relé; NO usar)
-│   └── v2/wt_gateway_v2_serial/   ★ Firmware actual (fw 2.8, solo serial)
-└── wt_gateway_app/                App Flutter (prototipo)
+│   ├── v1/                        Legacy (NO usar)
+│   └── v2/wt_gateway_v2_serial/   ★ Firmware actual
+└── wt_gateway_app/                App Flutter (Solo Testing Local, para Pruebas de Comunicacion)
 ```
 
 ---
@@ -90,36 +86,28 @@ Prototipo Funcional/
 | Componente | Detalle |
 |------------|---------|
 | 🔧 **ESP32** | Corre el firmware `wt_gateway_v2_serial` (fw 2.8). |
-| 🛰️ **GPS GV75CG** | Ejecuta el corte por su salida DOUT; recibe comandos AT por serial. |
+| 🛰️ **GPS GV75CG** | Ejecuta el corte por su salida digital; recibe comandos AT por serial. |
 | 🔀 **MAX3232** | Conversor RS-232 ↔ TTL entre ESP32 y GPS. |
 | 🔋 **Fuente OKI** | DC-DC para alimentación. |
 
 > [!IMPORTANT]
-> **Serial2 del ESP32:** `GPIO23 = RX`, `GPIO22 = TX`, **115200 8N1**, pull-up en RX.
-> El ESP32 **no** usa salida local de corte (sin GPIO21/GPIO23 como salida): el
-> corte lo ejecuta siempre el tracker.
-
+> **Serial del ESP32:** `GPIO23 = RX`, `GPIO22 = TX`.
+> **Velocidad 115200 baud**
 ---
 
 ## ⛔ 4 · Lógica de corte
 
-Decisión autónoma en el ESP32:
+En el ESP32:
 
 | Ignición | Geocerca | Resultado |
 |:--------:|:--------:|-----------|
 | OFF | Fuera | 🔴 **Corta** (bloquea) |
 | ON | — | 🟢 No corta |
-| — | Dentro | 🟢 No corta |
-| — | Desconocida (`geoKnown=false`) | 🟢 No corta |
+| OFF | Dentro | 🟢 No corta |
 
-- El corte se ejecuta **solo al cambiar de estado**, enviando al GPS el comando AT
-  configurable `cmd_cut_on` / `cmd_cut_off` (por defecto `AT+GTDOS=…` del GV75CG).
-- La app solo **deshabilita** (`>DISABLECUT`). Se **re-arma** tras un ciclo de
-  ignición (arrancar y apagar) o con `>ARMCUT` (Admin).
-- Un mensaje serial del GPS (`re_enable_str`, por defecto `DISABLE_CUT`) también
-  deshabilita.
-- **Sin heartbeat**: al desconectar la app, el ESP mantiene el último estado.
-- El estado (ignición / geocerca / override / viaje / `enabled`) **persiste en NVS**.
+- El corte se ejecuta **solo al cambiar de estado de la Ignicion**.
+- La app solo **deshabilita el corte** (`>DISABLECUT`).
+- El estado de la ESP32 (ignición / geocerca / override / viaje / `enabled`) **persiste en NVS**.
 
 ---
 
@@ -134,7 +122,7 @@ Servicio NUS con MTU 247.
 | TX (ESP notifica) | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` |
 
 Los comandos de la app empiezan con `>` y las respuestas del ESP con `<`. La app
-escribe con **Write Request** (confirmación). Las acciones sensibles exigen sesión
+escribe con **Write Request**. Las acciones sensibles exigen sesión
 autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--seguridad).
 
 ---
@@ -223,8 +211,8 @@ autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--segur
 |-----------------|--------|
 | `IGN_ON` / `IGN_OFF` | Ignición encendida / apagada. |
 | `ZonaSegura_ON` / `ZonaSegura_OFF` | Dentro / fuera de geocerca. |
-| `DISABLE_CUT` | El GPS pide deshabilitar el corte. |
-| `WT_DISABLE` / `WT_ENABLE` | Standby: apaga / reactiva el gateway (no configurable). |
+| `DISABLE_CUT` | La ESP32 pide deshabilitar el corte. |
+| `WT_DISABLE` / `WT_ENABLE` | Standby: apaga / reactiva el gateway. |
 
 **El ESP envía al GPS:**
 
@@ -237,9 +225,9 @@ autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--segur
 
 ## 💾 9 · Configuración en NVS
 
-Todos los parámetros de operación viven en NVS (Preferences) con valores por
+Todos los parámetros de operación viven en NVS con valores por
 defecto (`DEF_*`) que solo aplican al primer arranque; luego se editan en runtime
-con los setters `>SET_*` o desde la app. **Sin valores hardcodeados de operación.**
+con los setters `>SET_*` o desde la app.
 
 > Parámetros: `baud`, `profile`, `cmd_cut_on/off`, `cmd_ack`, tokens de
 > ignición/geocerca, `re_enable_str`, intervalos `ka_on`/`ka_off`, `enabled`.
@@ -256,8 +244,7 @@ con los setters `>SET_*` o desde la app. **Sin valores hardcodeados de operació
   `HMAC-SHA256(device_key, nonce)`. Sin auth, las acciones se rechazan.
 - 🚧 **Dispatcher por canal:** por serial solo se atiende una whitelist
   (`GET_PROFILE`, `STATUS`, `VERSION`); el resto se ignora en silencio.
-- 🔒 **Flash Encryption (Release Mode):** diseñado, **pendiente de activar** antes
-  de producción (irreversible; ver `docs/README_BUILD.md`).
+- 🔒 **Flash Encryption (Pendiente):** (irreversible; ver `docs/README_BUILD.md`).
 
 > [!WARNING]
 > **Limitación conocida (prototipo):** `kMasterSecret` está embebido en el binario
