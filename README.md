@@ -34,9 +34,6 @@ en el GPS; el ESP32 solo **decide cuándo debe estar activo el corte** y se lo
 ordena al tracker por **serial** (comando AT). La app identifica el equipo por
 BLE, se autentica y puede **deshabilitar** el corte.
 
-> [!NOTE]
-> Este es un **prototipo**, se entregaran las indicaciones y sugerencias para poder integrar una app movil en relacion a la funcionalidad del firmware y hardware.
-
 ---
 
 ## 📑 Índice
@@ -61,7 +58,6 @@ BLE, se autentica y puede **deshabilitar** el corte.
 | ✅ | Prototipo (Modulo ESP32 + Conversor Serial + GPS + App Movil). |
 | ✅ | Compatibilidad con GPS: **GV75CG**. |
 | ✅ | Firmware **V2.9**. |
-| ⏳ | **Pendiente:** Flash Encryption y App Productiva |
 
 ---
 
@@ -128,9 +124,9 @@ autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--segur
 
 ---
 
-## 🔗 5·b · Guía de conexión para una app nueva
+## 🔗 5·b · Guía de conexión para una app
 
-Pasos para que **cualquier app** (no solo la Flutter de referencia) se conecte e
+Pasos para que **cualquier app** se conecte e
 interactúe con el equipo:
 
 **1 · Escanear y filtrar.** El equipo tiene advertising anónimo (sin nombre). No
@@ -310,45 +306,8 @@ con los setters `>SET_*` o desde la app.
   (`GET_PROFILE`, `STATUS`, `VERSION`); el resto se ignora en silencio.
 - 🔒 **Flash Encryption (Pendiente):** (irreversible; ver `docs/README_BUILD.md`).
 
-> [!WARNING]
-> **Limitación conocida (prototipo):** `kMasterSecret` está embebido en el binario
-> de la app (`wt_gateway_app/lib/config.dart`). Quien decompile el APK obtiene el
-> master. Aceptable solo para prototipo/demo; en producción el master **no** debe
-> compilarse en el binario.
-
 ---
 
-## 📱 11 · App móvil (Flutter)
-
-Local, sin servidor. Detalle completo en `docs/CONTEXTO_COWORK.md`.
-
-- 🔐 **Login** por usuario + PIN (PIN hasheado con SHA-256 salteado; nunca en claro).
-- 👥 **Roles:** **Operador** (solo sus patentes en rango), **Instalador**
-  (provisiona, renombra, ve consola BLE, ve todos), **Administrador** (además
-  gestiona usuarios/ajustes y re-arma el corte).
-- 🧪 **PIN 9999 en Admin:** desbloquea el **modo debug / Banco de pruebas**. Con el
-  PIN normal la sesión es productiva (sin debug).
-- 🖥️ **Pantallas:** escáner de vehículos (filtra por Manufacturer Data WT y
-  proximidad), detalle del vehículo (estado + "Deshabilitar/Armar corte" +
-  consola BLE), provisionar, perfil/ajustes.
-- 📶 **Servicio BLE:** al conectar descubre el NUS, activa notificaciones, pide
-  `>STATUS`/`>VERSION` y hace **auth silenciosa**; hasta 3 reintentos de auth y de
-  reconexión automática.
-
----
-
-## 🚀 12 · Temas sugeridos (firmware + app)
-
-<table>
-<tr><th>📱 App productiva</th><th>🔧 Firmware</th></tr>
-<tr valign="top"><td>
-
-- Consumir `>GET_PROFILE` (JSON) en vez de solo `<STATUS`.
-- Usar los setters `>SET_*` para configurar desde la app.
-- Manejar `>AUTO_DETECT` y `<PROFILE_DETECTED`.
-- Manejar standby (`<ERR device_disabled`).
-- **Master fuera del binario** (servidor por sesión: login → JWT → vault).
-- Roles con servidor/JWT, allowlist de patentes, cache offline, backoffice.
 
 </td><td>
 
