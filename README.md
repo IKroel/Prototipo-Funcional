@@ -340,9 +340,4 @@ La MAC es la que viaja en el advertising. Guía completa e integración:
 
 ---
 
-
 </td><td>
-
-- Completar los perfiles de **AUTO_DETECT** (hoy solo `gv75cg`).
-- Activar **Flash Encryption (Release Mode)**; evaluar **NVS encryption** + **Secure Boot V2**.
-- Prueba
