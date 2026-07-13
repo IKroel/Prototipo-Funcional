@@ -40,7 +40,7 @@ def sign_nonce(device_key: bytes, nonce_hex: str) -> str:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Utilidad de auth BLE Wisetrack.")
+    p = argparse.ArgumentParser(description="Auth BLE")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("gen-master", help="Genera un master nuevo (64 hex).")
