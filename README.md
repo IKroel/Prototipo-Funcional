@@ -306,6 +306,38 @@ con los setters `>SET_*` o desde la app.
   (`GET_PROFILE`, `STATUS`, `VERSION`); el resto se ignora en silencio.
 - 🔒 **Flash Encryption (Pendiente):** (irreversible; ver `docs/README_BUILD.md`).
 
+### 🔑 Generar la clave (master) e integrar la auth
+
+El **master no vive en el repo**: se genera y se entrega fuera de banda al equipo
+de desarrollo. Con él, la app puede descubrir y comandar **cualquier ESP32 con
+este firmware** (leer no requiere master; comandar sí).
+
+```bash
+# 1. Generar el master (una vez; compártelo por canal privado, NO lo subas a git)
+python3 tools/wt_auth.py gen-master
+#    -> 64 hex chars (32 bytes)
+
+# 2. Provisionar un equipo (una vez por ESP): por BLE
+#    >PROVISION <master_hex_64>   ->  <PROVISION_OK
+
+# 3. Autenticar en cada conexión:
+#    >CHALLENGE            -> <CHALLENGE <nonce_hex>   (8 bytes)
+#    calcular el token y enviarlo:
+python3 tools/wt_auth.py token --master <hex> --mac AA:BB:CC:DD:EE:FF --nonce <nonce>
+#    >AUTH <token_hex_32>  ->  <AUTH_OK
+```
+
+Derivación (lo que la app debe implementar):
+`device_key = HMAC-SHA256(master, MAC_6bytes)` · `token = HMAC-SHA256(device_key, nonce)[:16]`.
+La MAC es la que viaja en el advertising. Guía completa e integración:
+[`docs/INTEGRACION_BLE.md`](docs/INTEGRACION_BLE.md).
+
+> [!WARNING]
+> El master es una **llave universal** (con él + la MAC pública se deriva la
+> `device_key` de todos los equipos). Nunca lo versiones. En producción debe
+> entregarlo el servidor por sesión (login → JWT → vault), no compilarse en el
+> cliente.
+
 ---
 
 
