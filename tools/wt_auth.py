@@ -11,9 +11,6 @@
 #   token      = HMAC-SHA256(device_key, nonce)[:16]   (16 bytes)
 #   nonce      = 8 bytes  (16 hex chars, llega en <CHALLENGE)
 #   token      = 16 bytes (32 hex chars, se envía en >AUTH)
-#
-# IMPORTANTE: el master NO se versiona. Se entrega fuera de banda
-# al equipo de desarrollo. Ver docs/INTEGRACION_BLE.md.
 # ============================================================
 import argparse
 import hashlib
