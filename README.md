@@ -332,12 +332,4 @@ Derivación (lo que la app debe implementar):
 La MAC es la que viaja en el advertising. Guía completa e integración:
 [`docs/INTEGRACION_BLE.md`](docs/INTEGRACION_BLE.md).
 
-> [!WARNING]
-> El master es una **llave universal** (con él + la MAC pública se deriva la
-> `device_key` de todos los equipos). Nunca lo versiones. En producción debe
-> entregarlo el servidor por sesión (login → JWT → vault), no compilarse en el
-> cliente.
-
----
-
 </td><td>
