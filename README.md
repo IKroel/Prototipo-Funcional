@@ -48,6 +48,7 @@ BLE, se autentica y puede **deshabilitar** el corte.
 | 3 | [Hardware](#-3--hardware) | 10 | [Seguridad](#-10--seguridad) |
 | 4 | [Lógica de corte](#-4--lógica-de-corte) | 11 | [App móvil (Flutter)](#-11--app-móvil-flutter) |
 | 5 | [Protocolo BLE](#-5--protocolo-ble--nordic-uart-service) | 12 | [Temas sugeridos](#-12--temas-sugeridos-firmware--app) |
+| 5·b | [Guía de conexión para una app nueva](#-5b--guía-de-conexión-para-una-app-nueva) | | |
 | 6 | [Comandos App → ESP32](#-6--comandos-app--esp32) | 13 | [Por dónde empezar](#-13--por-dónde-empezar) |
 | 7 | [Respuestas ESP32 → App](#-7--respuestas--notificaciones-esp32--app) | | |
 
@@ -124,6 +125,63 @@ Servicio NUS con MTU 247.
 Los comandos de la app empiezan con `>` y las respuestas del ESP con `<`. La app
 escribe con **Write Request**. Las acciones sensibles exigen sesión
 autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--seguridad).
+
+---
+
+## 🔗 5·b · Guía de conexión para una app nueva
+
+Pasos para que **cualquier app** (no solo la Flutter de referencia) se conecte e
+interactúe con el equipo:
+
+**1 · Escanear y filtrar.** El equipo tiene advertising anónimo (sin nombre). No
+lo busques por nombre ni por UUID de servicio: fíltralo por **Manufacturer Data**
+`0xFFFF` seguido de los bytes `W` `T` `0x01` (`0xFF 0xFF 0x57 0x54 0x01`).
+
+**2 · Conectar y descubrir.** Conéctate y descubre el servicio NUS
+`6E400001-…`. Toma dos características: **RX** `6E400002-…` (Write) para enviar y
+**TX** `6E400003-…` (Notify) para recibir.
+
+**3 · Suscribir notificaciones.** Activa notificaciones (CCCD) en TX **antes** de
+enviar comandos, o perderás las primeras respuestas.
+
+**4 · Formato de mensajes.** Escribe con **Write Request**. Cada comando empieza
+con `>` (ej. `>PING`). Un write = un comando. Las respuestas llegan por TX
+empezando con `<` y **terminan en `\n`**: acumula los bytes recibidos en un buffer
+y procesa una línea cada vez que veas `\n` (una notificación ≠ un mensaje; con MTU
+chico un `<PROFILE {json}` largo llega fragmentado).
+
+**5 · Handshake de autenticación.** Los comandos de lectura (`>PING`, `>VERSION`,
+`>GET_PROFILE`, `>STATUS`, `>MAC`) no requieren auth. Para los sensibles
+(`>DISABLECUT`, `>ARMCUT`, `>SET_*`, `>REPORT`, etc.) primero autentícate:
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant ESP32
+    App->>ESP32: >CHALLENGE
+    ESP32-->>App: <CHALLENGE <nonce_hex> (16 bytes)
+    Note over App: device_key = HMAC-SHA256(master, MAC_BLE)<br/>token = 16 bytes de HMAC-SHA256(device_key, nonce)
+    App->>ESP32: >AUTH <token_hex> (32 chars = 16 bytes)
+    ESP32-->>App: <AUTH_OK  (o <AUTH_FAIL <motivo>)
+    App->>ESP32: >GET_PROFILE / >DISABLECUT / ...
+    ESP32-->>App: <PROFILE {json} / <CUT_DISABLED / ...
+```
+
+> [!IMPORTANT]
+> La sesión autenticada **se pierde al desconectar** (`g_authed=false`). Hay que
+> repetir el handshake en cada reconexión. El **estado del corte NO se revierte**
+> al desconectar.
+
+**6 · Parsear el estado.** `>GET_PROFILE` → `<PROFILE {json}` con la config +
+estado completos (`type:"profile"`). `>STATUS` → `<STATUS name=… en=… ign=… geo=…
+cut=… override=…` (clave=valor, no JSON). El latido periódico KA
+(`type:"ka"`) NO viaja por BLE: sale por serial al GPS; solo es visible por BLE en
+el monitor admin con `>SERMON 1` (llega como eco `<TXGPS AT+GTDAT=…`).
+
+> [!TIP]
+> Para probar sin escribir código: **nRF Connect** o **Serial Bluetooth Terminal**
+> hablan NUS directo. Los comandos de lectura funcionan sin auth; para los
+> sensibles hay que calcular el HMAC a mano con el nonce de `<CHALLENGE`.
 
 ---
 

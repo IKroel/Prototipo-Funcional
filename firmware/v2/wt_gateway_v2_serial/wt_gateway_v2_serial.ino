@@ -883,4 +883,45 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 
 // ════════════════════════════════════════════════════════════════════
 // SETUP
-// ══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  Serial.println("\nWisetrack ESP32 Gateway V2 (solo serial, corte por AT)");
+
+  loadConfig();
+
+  Tracker.begin(g_baud, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
+  gpio_set_pull_mode((gpio_num_t)UART_RX_PIN, GPIO_PULLUP_ONLY);
+
+  delay(300);
+  loadName();
+  loadKey();
+  loadState();
+
+  NimBLEDevice::init(g_devName);
+  NimBLEDevice::setMTU(247);
+  NimBLEServer* server = NimBLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
+  NimBLEService* svc = server->createService(NUS_SVC_UUID);
+  NimBLECharacteristic* rx = svc->createCharacteristic(
+      NUS_RX_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  rx->setCallbacks(new RxCallbacks());
+  gTxChar = svc->createCharacteristic(NUS_TX_UUID, NIMBLE_PROPERTY::NOTIFY);
+  svc->start();
+  configureAdv();
+
+  evaluate();
+  Serial.printf("[INIT] '%s' listo. profile=%s en=%d geoKnown=%d ign=%d geo=%d override=%d\n",
+                g_devName, g_profile.c_str(), g_enabled, g_geoKnown, g_ignOn, g_inGeo, g_cutDisabled);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// LOOP
+// ════════════════════════════════════════════════════════════════════
+void loop() {
+  pumpSerial();
+  pumpAutoDetect();
+  pumpKeepAlive();
+  delay(5);
+}
