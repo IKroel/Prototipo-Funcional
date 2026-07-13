@@ -8,7 +8,7 @@
 
 <br/>
 
-![Firmware](https://img.shields.io/badge/firmware-v2.8-blue?style=for-the-badge)
+![Firmware](https://img.shields.io/badge/firmware-v2.9-blue?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/ESP32-NimBLE-informational?style=for-the-badge&logo=espressif)
 ![GPS](https://img.shields.io/badge/GPS-GV75CG-success?style=for-the-badge)
 
@@ -59,7 +59,7 @@ BLE, se autentica y puede **deshabilitar** el corte.
 |:--:|------|
 | ✅ | Prototipo (Modulo ESP32 + Conversor Serial + GPS + App Movil). |
 | ✅ | Compatibilidad con GPS: **GV75CG**. |
-| ✅ | Firmware **V2.8**. |
+| ✅ | Firmware **V2.9**. |
 | ⏳ | **Pendiente:** Flash Encryption y App Productiva |
 
 ---
@@ -85,7 +85,7 @@ Prototipo Funcional/
 
 | Componente | Detalle |
 |------------|---------|
-| 🔧 **ESP32** | Corre el firmware `wt_gateway_v2_serial` (fw 2.8). |
+| 🔧 **ESP32** | Corre el firmware `wt_gateway_v2_serial` (fw 2.9). |
 | 🛰️ **GPS GV75CG** | Ejecuta el corte por su salida digital; recibe comandos AT por serial. |
 | 🔀 **MAX3232** | Conversor RS-232 ↔ TTL entre ESP32 y GPS. |
 | 🔋 **Fuente OKI** | DC-DC para alimentación. |
@@ -155,13 +155,14 @@ autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--segur
 |---------|---------|
 | `>DISABLECUT` | Deshabilita el corte (acción principal de la app). |
 | `>ARMCUT` | Re-arma el corte (solo Admin). |
+| `>REPORT` | Empuja el `profile` completo a Wisetrack por GTDAT (bajo pedido). |
 | `>UNPROVISION` | Borra la `device_key` (vuelve a estado sin provisionar). |
 | `>AUTO_DETECT` | Lanza la detección de perfil del tracker. |
 | `>SET_PROFILE <p>` | Fija el perfil (p. ej. `gv75cg`). |
 | `>SET_CUTON <at>` / `>SET_CUTOFF <at>` | Comandos AT de corte on/off. |
 | `>SET_IGNON <s>` / `>SET_IGNOFF <s>` | Tokens serial de ignición. |
 | `>SET_GEOIN <s>` / `>SET_GEOOUT <s>` | Tokens serial de geocerca. |
-| `>SET_KAON <s>` / `>SET_KAOFF <s>` | Intervalos de keep-alive (segundos). |
+| `>SET_KAON <s>` / `>SET_KAOFF <s>` | Intervalos del latido KA (segundos, según ignición). |
 
 </details>
 
@@ -186,7 +187,7 @@ autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--segur
 | Mensaje | Significado |
 |---------|-------------|
 | `<PONG` | Respuesta a `>PING`. |
-| `<VERSION fw=2.8 mac=…` | Versión y MAC. |
+| `<VERSION fw=2.9 mac=…` | Versión y MAC. |
 | `<PROFILE {json}` | Configuración + estado (respuesta a `>GET_PROFILE`). |
 | `<PROFILE_DETECTED <name>` | Perfil detectado por AUTO_DETECT. |
 | `<AUTO_DETECT start\|none` | Progreso/resultado de la detección. |
@@ -217,9 +218,14 @@ autenticada (`<ERR not_authed` si falta) — ver [§10 · Seguridad](#-10--segur
 **El ESP envía al GPS:**
 
 - ⛔ **Corte:** `cmd_cut_on` / `cmd_cut_off` (AT, por defecto `AT+GTDOS=gv75cg,…`).
-- 💓 **Keep-alive:** `WT_ALIVE,<mac>,<fw>,<relay>,<profile>` periódico, para que el
-  GPS lo reenvíe a plataforma. Intervalo dual: `ka_on` (ign ON, def. 30 s) /
-  `ka_off` (OFF, def. 300 s).
+- 💓 **Latido KA (V2.9):** JSON de salud envuelto en `AT+GTDAT=gv75cg,2,,<json>,0,,,,FFFF$`
+  para que el GPS lo reenvíe a plataforma. Intervalo dual: `ka_on` (ign ON, def. 30 s) /
+  `ka_off` (OFF, def. 300 s). Payload:
+  `{"type":"ka","mac":…,"name":…,"app_link":bool,"gps_link":bool,"interval":s}`.
+- 📋 **Profile bajo pedido:** con `>REPORT` se empuja el JSON completo (`type:"profile"`)
+  por el mismo GTDAT. El campo `type` distingue latido vs profile en plataforma.
+- ⚠️ **Pendiente:** el JSON tiene comas y el campo de datos de GTDAT es delimitado por
+  comas — validar contra el manual @Track del GV75CG (puede requerir payload sin comas).
 
 ---
 
@@ -290,23 +296,4 @@ Local, sin servidor. Detalle completo en `docs/CONTEXTO_COWORK.md`.
 
 - Completar los perfiles de **AUTO_DETECT** (hoy solo `gv75cg`).
 - Activar **Flash Encryption (Release Mode)**; evaluar **NVS encryption** + **Secure Boot V2**.
-- Pruebas en terreno con el señuelo.
-- Homologación del GV75CG.
-
-</td></tr>
-</table>
-
----
-
-## 🧭 13 · Por dónde empezar
-
-| Quiero… | Ir a |
-|---------|------|
-| 🔧 Flashear el firmware | [`firmware/README.md`](firmware/README.md) → `firmware/v2/wt_gateway_v2_serial/` |
-| 📱 Compilar la app / provisionar equipos | [`docs/README_BUILD.md`](docs/README_BUILD.md) |
-| 📖 Entender la arquitectura y el protocolo | [`docs/CONTEXTO_COWORK.md`](docs/CONTEXTO_COWORK.md) |
-
-<div align="center">
-<br/>
-<sub>Wisetrack · Llave Virtual BLE · Firmware v2.8</sub>
-</div>
+- Prueba

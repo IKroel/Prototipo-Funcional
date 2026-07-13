@@ -5,7 +5,7 @@ la versión marcada como actual.**
 
 ## ★ Actual — V2 (producción)
 
-`v2/wt_gateway_v2_serial/wt_gateway_v2_serial.ino` — **fw 2.8**
+`v2/wt_gateway_v2_serial/wt_gateway_v2_serial.ino` — **fw 2.9**
 
 - El corte lo ejecuta el GPS (GV75CG) por su DOUT, comandado por **serial** (AT).
 - El ESP32 **no** usa salida local de corte (sin GPIO21/GPIO23 como salida).

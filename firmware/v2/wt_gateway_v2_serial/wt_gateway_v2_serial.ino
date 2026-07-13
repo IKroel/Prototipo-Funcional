@@ -1,24 +1,21 @@
 /*
-  Wisetrack ESP32 Gateway — V2 (corte autónomo por ignición/geocerca)
+  Wisetrack ESP32 Gateway — V2 (corte por ignición/geocerca)
   ════════════════════════════════════════════════════════════════════
   FIRMWARE ÚNICO V2 — "SOLO SERIAL".
   El corte lo ejecuta el tracker (GV75CG por defecto) en su DOUT,
-  comandado por serial. El ESP NO maneja ninguna salida local de corte
-  (no se usa GPIO21 ni GPIO23 como salida).
+  comandado por serial.
 
   Lógica (decisión en el ESP):
     - CORTE      si ignición OFF Y fuera de geocerca.
     - Sin corte  si ignición ON  o dentro de geocerca.
     Al cambiar de estado, el ESP envía por serial al tracker:
-        cmd_cut_on  (habilitar corte)  -> vehículo bloqueado
-        cmd_cut_off (deshabilitar corte) -> vehículo habilitado
     - La app solo DESHABILITA el corte (>DISABLECUT). Se re-arma tras un
       ciclo de ignición (arrancar y volver a apagar) o con >ARMCUT (Admin).
     - Un mensaje serial del tracker (re_enable_str) también deshabilita.
-    - Sin heartbeat: al desconectar la app, se mantiene el último estado.
+    - Al desconectar la app, se mantiene el último estado.
     - Se conserva la autenticación BLE: solo un cliente autenticado deshabilita.
 
-  Novedades V2.8 (decisiones de diseño del resumen V2):
+  V2.8:
     1. Advertising anónimo: sin nombre ni scan response; solo Manufacturer
        Data 0xFFFF+W+T+0x01. Scanners genéricos ven "Unknown Device".
     3. Todos los parámetros viven en NVS (Preferences). Sin hardcode: los
@@ -58,7 +55,7 @@
 // ════════════════════════════════════════════════════════════════════
 #define WT_DEBUG
 
-#define FW_VERSION "2.8"
+#define FW_VERSION "2.9"
 
 // ════════════════════════════════════════════════════════════════════
 // HARDWARE
@@ -354,25 +351,40 @@ static String buildProfileJson() {
     String o; for (int i = 0; i < v.length(); i++) {
       char c = v[i]; if (c == '"' || c == '\\') o += '\\'; o += c; } return o; };
   String j = "{";
+  j += "\"type\":\"profile\",";
   j += "\"mac\":\"" + getBleMacString() + "\",";
   j += "\"fw\":\"" + String(FW_VERSION) + "\",";
   j += "\"name\":\"" + esc(String(g_devName)) + "\",";
   j += "\"enabled\":" + String(g_enabled ? "true" : "false") + ",";
   j += "\"profile\":\"" + esc(g_profile) + "\",";
   j += "\"baud\":" + String(g_baud) + ",";
-  j += "\"relay_state\":" + String(g_lastCut == 1 ? 1 : 0) + ",";
-  j += "\"ignition\":" + String(g_ignOn ? "true" : "false") + ",";
-  j += "\"in_geo\":" + String(g_inGeo ? "true" : "false") + ",";
+  j += "\"cut\":" + String(g_lastCut == 1 ? 1 : 0) + ",";
+  j += "\"ign\":" + String(g_ignOn ? "true" : "false") + ",";
+  j += "\"geo\":" + String(g_inGeo ? "true" : "false") + ",";
   j += "\"override\":" + String(g_cutDisabled ? "true" : "false") + ",";
-  j += "\"cmd_cut_on\":\"" + esc(g_cmdCutOn) + "\",";
-  j += "\"cmd_cut_off\":\"" + esc(g_cmdCutOff) + "\",";
-  j += "\"cmd_ack\":\"" + esc(g_cmdAck) + "\",";
-  j += "\"ign_on_str\":\"" + esc(g_ignOnStr) + "\",";
-  j += "\"ign_off_str\":\"" + esc(g_ignOffStr) + "\",";
-  j += "\"geo_in_str\":\"" + esc(g_geoInStr) + "\",";
-  j += "\"geo_out_str\":\"" + esc(g_geoOutStr) + "\",";
-  j += "\"ka_interval_on\":" + String(g_kaOn) + ",";
-  j += "\"ka_interval_off\":" + String(g_kaOff);
+  j += "\"cut_on\":\"" + esc(g_cmdCutOn) + "\",";
+  j += "\"cut_off\":\"" + esc(g_cmdCutOff) + "\",";
+  j += "\"ack\":\"" + esc(g_cmdAck) + "\",";
+  j += "\"ign_on\":\"" + esc(g_ignOnStr) + "\",";
+  j += "\"ign_off\":\"" + esc(g_ignOffStr) + "\",";
+  j += "\"geo_in\":\"" + esc(g_geoInStr) + "\",";
+  j += "\"geo_out\":\"" + esc(g_geoOutStr) + "\",";
+  j += "\"ka_on\":" + String(g_kaOn) + ",";
+  j += "\"ka_off\":" + String(g_kaOff);
+  j += "}";
+  return j;
+}
+
+// JSON corto de latido (KA) — mensaje periódico por GTDAT.
+static String buildKaJson() {
+  uint32_t iv = g_ignOn ? g_kaOn : g_kaOff;
+  String j = "{";
+  j += "\"type\":\"ka\",";
+  j += "\"mac\":\"" + getBleMacString() + "\",";
+  j += "\"name\":\"" + String(g_devName) + "\",";
+  j += "\"app_link\":" + String(gClientConnected ? "true" : "false") + ",";
+  j += "\"gps_link\":" + String(g_serRxLines > 0 ? "true" : "false") + ",";
+  j += "\"interval\":" + String(iv);
   j += "}";
   return j;
 }
@@ -482,18 +494,32 @@ static void exitStandby() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// KEEP-ALIVE — al tracker por serial; intervalo dual según ignición
+// GTDAT — envuelve cualquier JSON para que el GV75CG lo reenvíe a
+//   Wisetrack. Se refleja por BLE SOLO en el monitor admin (SERMON on).
+//   NOTA: el campo de datos de GTDAT es delimitado por comas y el JSON
+//   las contiene. Validar contra el manual @Track del GV75CG (puede
+//   requerir payload sin comas o con encoding).
+// ════════════════════════════════════════════════════════════════════
+static void sendGtdat(const String& payload) {
+  String prof = g_profile.length() ? g_profile : String("gv75cg");
+  String m = String("AT+GTDAT=") + prof + ",2,," + payload + ",0,,,,FFFF$";
+  Tracker.print(m);
+  Tracker.print("\r\n");
+  Serial.printf("[GTDAT] %s\n", m.c_str());
+  if (g_serMon) reply(String("<TXGPS ") + m + "\n");
+}
+
+// ════════════════════════════════════════════════════════════════════
+// LATIDO PERIÓDICO (KA, V2.9) — intervalo dual según ignición.
+//   Emite buildKaJson() por GTDAT cada ka_on / ka_off segundos
+//   (0 = deshabilitado). El profile completo se envía bajo pedido (>REPORT).
 // ════════════════════════════════════════════════════════════════════
 static void pumpKeepAlive() {
   uint32_t secs = g_ignOn ? g_kaOn : g_kaOff;
   if (secs == 0) return;    // 0 = deshabilitado
   if ((millis() - g_lastKa) < (secs * 1000UL)) return;
   g_lastKa = millis();
-  String prof = g_profile.length() ? g_profile : String("none");
-  String m = String("WT_ALIVE,") + getBleMacString() + "," + FW_VERSION + ","
-             + (g_lastCut == 1 ? 1 : 0) + "," + prof + "\r";
-  Tracker.print(m);
-  Serial.printf("[KA] %s\n", m.c_str());
+  sendGtdat(buildKaJson());
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -638,6 +664,11 @@ static void handleInternal(String cmd, Source src) {
 
   } else if (cmd.equalsIgnoreCase("GET_PROFILE")) {
     reply(String("<PROFILE ") + buildProfileJson() + "\n");
+
+  } else if (cmd.equalsIgnoreCase("REPORT")) {
+    if (!g_authed) { reply("<ERR not_authed\n"); return; }
+    sendGtdat(buildProfileJson());
+    reply("<OK report_sent\n");
 
   } else if (cmd.startsWith("NAME ")) {
     String n = cmd.substring(5); n.trim();
@@ -852,45 +883,4 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 
 // ════════════════════════════════════════════════════════════════════
 // SETUP
-// ════════════════════════════════════════════════════════════════════
-void setup() {
-  Serial.begin(115200);
-  delay(200);
-  Serial.println("\nWisetrack ESP32 Gateway V2 (solo serial, corte por AT)");
-
-  loadConfig();
-
-  Tracker.begin(g_baud, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
-  gpio_set_pull_mode((gpio_num_t)UART_RX_PIN, GPIO_PULLUP_ONLY);
-
-  delay(300);
-  loadName();
-  loadKey();
-  loadState();
-
-  NimBLEDevice::init(g_devName);
-  NimBLEDevice::setMTU(247);
-  NimBLEServer* server = NimBLEDevice::createServer();
-  server->setCallbacks(new ServerCallbacks());
-  NimBLEService* svc = server->createService(NUS_SVC_UUID);
-  NimBLECharacteristic* rx = svc->createCharacteristic(
-      NUS_RX_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  rx->setCallbacks(new RxCallbacks());
-  gTxChar = svc->createCharacteristic(NUS_TX_UUID, NIMBLE_PROPERTY::NOTIFY);
-  svc->start();
-  configureAdv();
-
-  evaluate();
-  Serial.printf("[INIT] '%s' listo. profile=%s en=%d geoKnown=%d ign=%d geo=%d override=%d\n",
-                g_devName, g_profile.c_str(), g_enabled, g_geoKnown, g_ignOn, g_inGeo, g_cutDisabled);
-}
-
-// ════════════════════════════════════════════════════════════════════
-// LOOP
-// ════════════════════════════════════════════════════════════════════
-void loop() {
-  pumpSerial();
-  pumpAutoDetect();
-  pumpKeepAlive();
-  delay(5);
-}
+// ══════════════════════════════════════════════

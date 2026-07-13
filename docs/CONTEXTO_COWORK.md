@@ -22,7 +22,7 @@ Bluetooth, se autentica y puede **deshabilitar** el corte para permitir el uso.
 
 ## 2. Hardware
 
-- **ESP32** con firmware `wt_gateway_v2_serial` (fw 2.8).
+- **ESP32** con firmware `wt_gateway_v2_serial` (fw 2.9).
 - **MAX3232** (conversor RS-232 <-> TTL) entre ESP32 y GPS.
 - **Fuente OKI** (DC-DC) para alimentación.
 - Serial2 del ESP: **GPIO23 = RX, GPIO22 = TX**, 115200 8N1, pull-up en RX.
@@ -30,7 +30,7 @@ Bluetooth, se autentica y puede **deshabilitar** el corte para permitir el uso.
 
 ---
 
-## 3. El script (firmware `wt_gateway_v2_serial.ino`, fw 2.8)
+## 3. El script (firmware `wt_gateway_v2_serial.ino`, fw 2.9)
 
 ### 3.1 Arranque (`setup`)
 Carga desde NVS la configuración y el último estado; abre Serial2 al baud
@@ -100,7 +100,7 @@ App->ESP (productivos): `>PING`, `>VERSION`, `>GET_PROFILE`, `>NAME [txt]`,
 App->ESP (debug, exigen auth): `>TESTGPS ON|OFF`, `>SIM <token>`,
 `>SETIGN/SETGEO/SETGEOKNOWN/SETOVR`, `>RELAXGEO/ALWAYSSEND/IGNOVR`, `>SETEN`, `>DUMP`.
 
-ESP->App: `<STATUS ...`, `<VERSION fw=2.8 ...`, `<PROFILE {json}`,
+ESP->App: `<STATUS ...`, `<VERSION fw=2.9 ...`, `<PROFILE {json}`,
 `<PROFILE_DETECTED <name>`, `<CHALLENGE`, `<AUTH_OK`/`<AUTH_FAIL`, `<PROVISION_OK`,
 `<UNPROVISION_OK`, `<CUT_DISABLED`/`<CUT_ARMED`, `<TXGPS <cmd>`, `<DUMP ...`,
 `<SER`/`<SERHEX` (si SERMON), `<ERR ...` (p.ej. `device_disabled`, `unknown_cmd`).
@@ -157,7 +157,7 @@ la firma del nonce al servidor.
 
 ## 5. Alineación app <-> firmware (importante)
 
-El **firmware ya está en V2.8**, pero la **app prototipo aún usa un subconjunto
+El **firmware ya está en V2.9**, pero la **app prototipo aún usa un subconjunto
 del protocolo** (no consume todavía las funciones nuevas). Al reconstruir la app,
 Desarrollo debe incorporar:
 
@@ -180,7 +180,7 @@ Prototipo Funcional/
 ├── firmware/
 │   ├── README.md                  Índice de versiones de firmware
 │   ├── v1/                        Legacy (corte por GPIO23/relé; NO usar)
-│   └── v2/wt_gateway_v2_serial/   Firmware actual (fw 2.8, solo serial, sin IO21)
+│   └── v2/wt_gateway_v2_serial/   Firmware actual (fw 2.9, solo serial, sin IO21)
 └── wt_gateway_app/                App Flutter (prototipo)
 ```
 
@@ -193,4 +193,4 @@ Prototipo Funcional/
 - Activar Flash Encryption (Release Mode) antes de producción.
 - Completar los perfiles de AUTO_DETECT (comandos de identificación por modelo).
 - App productiva (Desarrollo): master fuera del binario, roles con servidor/JWT,
-  allowlist de patentes, cache offline, backoffice, y consumo del protocolo V2.8.
+  allowlist de patentes, cache offline, backoffice, y consumo del protocolo V2.9.
