@@ -40,14 +40,12 @@ BLE, se autentica y puede **deshabilitar** el corte.
 
 | # | Sección | # | Sección |
 |---|---------|---|---------|
-| 1 | [Estado actual](#-1--estado-actual) | 8 | [Comunicación serial ESP32 ↔ GPS](#-8--comunicación-serial-esp32--gps) |
-| 2 | [Estructura del repositorio](#-2--estructura-del-repositorio) | 9 | [Configuración en NVS](#-9--configuración-en-nvs) |
-| 3 | [Hardware](#-3--hardware) | 10 | [Seguridad](#-10--seguridad) |
-| 4 | [Lógica de corte](#-4--lógica-de-corte) | 11 | [App móvil (Flutter)](#-11--app-móvil-flutter) |
-| 5 | [Protocolo BLE](#-5--protocolo-ble--nordic-uart-service) | 12 | [Temas sugeridos](#-12--temas-sugeridos-firmware--app) |
-| 5·b | [Guía de conexión para una app nueva](#-5b--guía-de-conexión-para-una-app-nueva) | | |
-| 6 | [Comandos App → ESP32](#-6--comandos-app--esp32) | 13 | [Por dónde empezar](#-13--por-dónde-empezar) |
-| 7 | [Respuestas ESP32 → App](#-7--respuestas--notificaciones-esp32--app) | | |
+| 1 | [Estado actual](#-1--estado-actual) | 6 | [Comandos App → ESP32](#-6--comandos-app--esp32) |
+| 2 | [Estructura del repositorio](#-2--estructura-del-repositorio) | 7 | [Respuestas ESP32 → App](#-7--respuestas--notificaciones-esp32--app) |
+| 3 | [Hardware](#-3--hardware) | 8 | [Comunicación serial ESP32 ↔ GPS](#-8--comunicación-serial-esp32--gps) |
+| 4 | [Lógica de corte](#-4--lógica-de-corte) | 9 | [Configuración en NVS](#-9--configuración-en-nvs) |
+| 5 | [Protocolo BLE](#-5--protocolo-ble--nordic-uart-service) | 10 | [Seguridad](#-10--seguridad) |
+| 5·b | [Guía de conexión para una app](#-5b--guía-de-conexión-para-una-app) | | |
 
 ---
 
@@ -55,7 +53,7 @@ BLE, se autentica y puede **deshabilitar** el corte.
 
 | | Ítem |
 |:--:|------|
-| ✅ | Prototipo (Modulo ESP32 + Conversor Serial + GPS + App Movil). |
+| ✅ | Prototipo (Modulo ESP32 + Conversor Serial + GPS). |
 | ✅ | Compatibilidad con GPS: **GV75CG**. |
 | ✅ | Firmware **V2.9**. |
 
@@ -68,12 +66,14 @@ Prototipo Funcional/
 ├── README.md                      
 ├── docs/
 │   ├── CONTEXTO_COWORK.md         Arquitectura y Protocolo
-│   ├── README_BUILD.md            Build del APK (Solo Testing Local, para Pruebas de Comunicacion)
+│   ├── INTEGRACION_BLE.md         Guía para integrar la auth BLE en una app
+│   ├── README_BUILD.md            Build (Flash Encryption, etc.)
 ├── firmware/
 │   ├── README.md                  Índice de versiones de firmware
 │   ├── v1/                        Legacy (NO usar)
 │   └── v2/wt_gateway_v2_serial/   ★ Firmware actual
-└── wt_gateway_app/                App Flutter (Solo Testing Local, para Pruebas de Comunicacion)
+└── tools/
+    └── wt_auth.py                 Genera master y calcula tokens de auth
 ```
 
 ---
@@ -331,5 +331,3 @@ Derivación (lo que la app debe implementar):
 `device_key = HMAC-SHA256(master, MAC_6bytes)` · `token = HMAC-SHA256(device_key, nonce)[:16]`.
 La MAC es la que viaja en el advertising. Guía completa e integración:
 [`docs/INTEGRACION_BLE.md`](docs/INTEGRACION_BLE.md).
-
-</td><td>
