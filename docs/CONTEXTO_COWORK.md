@@ -52,7 +52,7 @@ configurado; inicializa el BLE (NimBLE, MTU 247, servicio NUS); publica el
 Desde el GPS solo se aceptan dos tipos de entrada; el resto (incl. comandos `>`)
 se ignora. (a) Tokens de estado configurables: `IGN_ON`/`IGN_OFF`,
 `ZonaSegura_ON`/`ZonaSegura_OFF`. (b) Config remota `clave|valor` (la manda la
-plataforma con `AT+GTDAT` tipo 1): `1`=name, `2`=ka_on(seg), `3`=enabled(0/1),
+plataforma con `AT+GTDAT` tipo 1): `1`=name, `2`=ka(seg), `3`=enabled(0/1),
 `4`=profile. Ante un evento de estado recalcula el corte y notifica por BLE. Las
 líneas no imprimibles (ruido del bus) se descartan.
 
@@ -64,8 +64,8 @@ keep-alive sigue. El estado `enabled` persiste en NVS.
 ### 3.5 Latido KA
 Envía periódicamente al GPS `mac|name|enabled` (MAC sin `:`, separador `|`)
 envuelto en `AT+GTDAT=gv75cg,2,,<payload>,0,,,,FFFF$` para que el GPS lo reenvíe a
-plataforma. Intervalo dual: `ka_on` (ignición ON, def. 30 s) / `ka_off` (OFF, def.
-300 s). El profile completo se empuja bajo pedido con `>REPORT` (BLE).
+plataforma. Intervalo único `ka` (def. 60 s). El profile completo se empuja bajo
+pedido con `>REPORT` (BLE).
 
 ### 3.6 AUTO_DETECT de perfil (no bloqueante)
 FSM en `loop()` que prueba comandos de identificación por modelo y fija el perfil

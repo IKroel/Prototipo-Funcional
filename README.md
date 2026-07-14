@@ -216,7 +216,7 @@ BLE en el monitor admin con `>SERMON 1` (llega como eco `<TXGPS AT+GTDAT=…`).
 | `>SET_CUTON <at>` / `>SET_CUTOFF <at>` | Comandos AT de corte on/off. |
 | `>SET_IGNON <s>` / `>SET_IGNOFF <s>` | Tokens serial de ignición. |
 | `>SET_GEOIN <s>` / `>SET_GEOOUT <s>` | Tokens serial de geocerca. |
-| `>SET_KAON <s>` / `>SET_KAOFF <s>` | Intervalos del latido KA (segundos, según ignición). |
+| `>SET_KA <s>` | Intervalo del latido KA (segundos). |
 
 </details>
 
@@ -276,7 +276,7 @@ que el GV75CG saca por su serial). Persiste en NVS:
 | Clave | Parámetro | Ejemplo |
 |:--:|-----------|---------|
 | `1` | nombre interno (`<24`) | `1|PWWS63` |
-| `2` | intervalo KA con ignición ON (seg) | `2|3600` → 1 h |
+| `2` | intervalo del latido KA (seg) | `2|3600` → 1 h |
 | `3` | operativo / standby (`1`/`0`) | `3|0` |
 | `4` | perfil del tracker | `4|gv75cg` |
 
@@ -284,8 +284,8 @@ que el GV75CG saca por su serial). Persiste en NVS:
 
 - ⛔ **Corte:** `cmd_cut_on` / `cmd_cut_off` (AT, por defecto `AT+GTDOS=gv75cg,…`).
 - 💓 **Latido KA:** salud envuelta en `AT+GTDAT=gv75cg,2,,<payload>,0,,,,FFFF$` para
-  que el GPS la reenvíe a plataforma. Intervalo dual: `ka_on` (ign ON, def. 30 s) /
-  `ka_off` (OFF, def. 300 s). Payload **sin JSON**, separador `|` y MAC sin `:`:
+  que el GPS la reenvíe a plataforma. Intervalo único `ka` (def. 60 s). Payload
+  **sin JSON**, separador `|` y MAC sin `:`:
   `mac|name|enabled` (ej. `AABBCCDDEEFF|WT-EEFF|1`). El `|` y la MAC sin `:` evitan
   chocar con las comas del campo Data del GTDAT.
 - 📋 **Profile bajo pedido:** con `>REPORT` (BLE) se empuja el JSON completo
@@ -301,7 +301,7 @@ defecto (`DEF_*`) que solo aplican al primer arranque; luego se editan en runtim
 con los setters `>SET_*` o desde la app.
 
 > Parámetros: `baud`, `profile`, `cmd_cut_on/off`, tokens de
-> ignición/geocerca, intervalos `ka_on`/`ka_off`, `enabled`, `name`.
+> ignición/geocerca, intervalo `ka`, `enabled`, `name`.
 
 ---
 

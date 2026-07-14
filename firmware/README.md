@@ -34,4 +34,4 @@ referencia histórica.
 | Configuración | Hardcodeada | En NVS, editable en runtime |
 | Visibilidad BLE | Nombre visible | Advertising anónimo |
 | Estado al GPS | — | Latido KA (`mac|name|enabled`) por GTDAT |
-| Config remota | — | `clave|valor` por serial (name, ka_on, enabled, profile) |
+| Config remota | — | `clave|valor` por serial (name, ka, enabled, profile) |

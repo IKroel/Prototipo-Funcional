@@ -23,7 +23,7 @@
        "<clave>|<valor>" y los tokens de ignición/geocerca; el resto se ignora.
     6. Standby vía config serial (clave 3) o BLE. En standby se ignoran
        comandos de acción pero el keep-alive (KA) sigue.
-    7. Keep-alive periódico al tracker con intervalo dual por ignición.
+    7. Latido KA periódico al tracker con intervalo único (g_ka).
     8. Comando >GET_PROFILE: JSON con configuración + estado en vivo.
     5. AUTO_DETECT de perfil no bloqueante (FSM en loop()).
 
@@ -78,8 +78,7 @@ HardwareSerial &Tracker = Serial2;
 #define DEF_GEO_OUT     "ZonaSegura_OFF"
 #define DEF_CMD_CUT_ON  "AT+GTDOS=gv75cg,0,3,1,1,0,0,0,,2,0,0,0,0,,3,0,0,0,0,,0,0,5,,,,FFFF$"
 #define DEF_CMD_CUT_OFF "AT+GTDOS=gv75cg,0,3,1,0,0,0,0,,2,0,0,0,0,,3,0,0,0,0,,0,0,5,,,,FFFF$"
-#define DEF_KA_ON       30     // segundos entre keep-alive con ignición ON
-#define DEF_KA_OFF      300    // segundos entre keep-alive con ignición OFF
+#define DEF_KA          60     // segundos entre latidos KA (timer único)
 
 // ════════════════════════════════════════════════════════════════════
 // BLE — Nordic UART Service
@@ -108,8 +107,7 @@ String   g_ignOnStr   = DEF_IGN_ON;
 String   g_ignOffStr  = DEF_IGN_OFF;
 String   g_geoInStr   = DEF_GEO_IN;
 String   g_geoOutStr  = DEF_GEO_OUT;
-uint32_t g_kaOn       = DEF_KA_ON;
-uint32_t g_kaOff      = DEF_KA_OFF;
+uint32_t g_ka         = DEF_KA;
 
 // Estado del vehículo (último conocido por serial)
 bool g_enabled     = true;    // standby: false = ignora comandos de acción
@@ -270,8 +268,7 @@ static void loadConfig() {
   g_ignOffStr   = g_prefs.getString("ignOff", DEF_IGN_OFF);
   g_geoInStr    = g_prefs.getString("geoIn",  DEF_GEO_IN);
   g_geoOutStr   = g_prefs.getString("geoOut", DEF_GEO_OUT);
-  g_kaOn        = g_prefs.getUInt  ("kaOn",   DEF_KA_ON);
-  g_kaOff       = g_prefs.getUInt  ("kaOff",  DEF_KA_OFF);
+  g_ka          = g_prefs.getUInt  ("ka",     DEF_KA);
   g_enabled     = g_prefs.getBool  ("en",     true);
   g_prefs.end();
 }
@@ -357,8 +354,7 @@ static String buildProfileJson() {
   j += "\"ign_off\":\"" + esc(g_ignOffStr) + "\",";
   j += "\"geo_in\":\"" + esc(g_geoInStr) + "\",";
   j += "\"geo_out\":\"" + esc(g_geoOutStr) + "\",";
-  j += "\"ka_on\":" + String(g_kaOn) + ",";
-  j += "\"ka_off\":" + String(g_kaOff);
+  j += "\"ka\":" + String(g_ka);
   j += "}";
   return j;
 }
@@ -492,12 +488,12 @@ static void sendGtdat(const String& payload) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// LATIDO PERIÓDICO (KA, V2.9) — intervalo dual según ignición.
-//   Emite buildKa() por GTDAT cada ka_on / ka_off segundos
+// LATIDO PERIÓDICO (KA, V2.9) — intervalo único.
+//   Emite buildKa() por GTDAT cada g_ka segundos
 //   (0 = deshabilitado). El profile completo se envía bajo pedido (>REPORT).
 // ════════════════════════════════════════════════════════════════════
 static void pumpKeepAlive() {
-  uint32_t secs = g_ignOn ? g_kaOn : g_kaOff;
+  uint32_t secs = g_ka;
   if (secs == 0) return;    // 0 = deshabilitado
   if ((millis() - g_lastKa) < (secs * 1000UL)) return;
   g_lastKa = millis();
@@ -567,7 +563,7 @@ static void handleInternal(String cmd);   // fwd
 //   Llega por serial (el backend la manda con AT+GTDAT tipo 1). Sin auth:
 //   el GPS es un componente cableado y confiable. Diccionario de claves:
 //     1  name    (texto, <24)
-//     2  ka_on   (seg, intervalo del KA con ignición ON)
+//     2  ka      (seg, intervalo del latido KA)
 //     3  enabled (0|1, standby)
 //     4  profile (texto)
 //   Ej: "1|PWWS63" renombra; "2|3600" pone el KA (ign ON) a 1 hora.
@@ -582,7 +578,7 @@ static bool applySerialConfig(const String& line) {
 
   switch (key) {
     case 1: if (val.length() < 24) { saveName(val); configureAdv(); } break;
-    case 2: g_kaOn = (uint32_t)val.toInt(); setCfgU32("kaOn", g_kaOn); break;
+    case 2: g_ka = (uint32_t)val.toInt(); setCfgU32("ka", g_ka); break;
     case 3: { bool en = (val.toInt() != 0); if (en) exitStandby(); else enterStandby(); } break;
     case 4: g_profile = val; setCfgStr("prof", g_profile); break;
     default: return false;   // clave desconocida
@@ -783,15 +779,10 @@ static void handleInternal(String cmd) {
     g_geoOutStr = cmd.substring(11); g_geoOutStr.trim(); setCfgStr("geoOut", g_geoOutStr);
     reply("<OK geo_out_str\n");
 
-  } else if (cmd.startsWith("SET_KAON ")) {
+  } else if (cmd.startsWith("SET_KA ")) {
     if (!g_authed) { reply("<ERR not_authed\n"); return; }
-    g_kaOn = (uint32_t)cmd.substring(9).toInt(); setCfgU32("kaOn", g_kaOn);
-    reply(String("<OK ka_on=") + g_kaOn + "\n");
-
-  } else if (cmd.startsWith("SET_KAOFF ")) {
-    if (!g_authed) { reply("<ERR not_authed\n"); return; }
-    g_kaOff = (uint32_t)cmd.substring(10).toInt(); setCfgU32("kaOff", g_kaOff);
-    reply(String("<OK ka_off=") + g_kaOff + "\n");
+    g_ka = (uint32_t)cmd.substring(7).toInt(); setCfgU32("ka", g_ka);
+    reply(String("<OK ka=") + g_ka + "\n");
 
 #ifdef WT_DEBUG
   } else if (cmd.startsWith("TESTGPS")) {
