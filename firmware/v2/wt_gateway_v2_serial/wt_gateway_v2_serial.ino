@@ -11,7 +11,6 @@
     Al cambiar de estado, el ESP envía por serial al tracker:
     - La app solo DESHABILITA el corte (>DISABLECUT). Se re-arma tras un
       ciclo de ignición (arrancar y volver a apagar) o con >ARMCUT (Admin).
-    - Un mensaje serial del tracker (re_enable_str) también deshabilita.
     - Al desconectar la app, se mantiene el último estado.
     - Se conserva la autenticación BLE: solo un cliente autenticado deshabilita.
 
@@ -20,10 +19,10 @@
        Data 0xFFFF+W+T+0x01. Scanners genéricos ven "Unknown Device".
     3. Todos los parámetros viven en NVS (Preferences). Sin hardcode: los
        #define DEF_* son solo valores por defecto al primer arranque.
-    4. Dispatcher con Source (BLE/SERIAL). Por serial solo se atiende una
-       whitelist; el resto se ignora en silencio (el tracker no hace HMAC).
-    6. Standby controlado por el tracker (WT_DISABLE / WT_ENABLE por serial).
-       En standby se ignoran comandos de acción pero el keep-alive sigue.
+    4. Comandos ">" solo por BLE. Por serial (GPS) solo se acepta config
+       "<clave>|<valor>" y los tokens de ignición/geocerca; el resto se ignora.
+    6. Standby vía config serial (clave 3) o BLE. En standby se ignoran
+       comandos de acción pero el keep-alive (KA) sigue.
     7. Keep-alive periódico al tracker con intervalo dual por ignición.
     8. Comando >GET_PROFILE: JSON con configuración + estado en vivo.
     5. AUTO_DETECT de perfil no bloqueante (FSM en loop()).
@@ -53,7 +52,7 @@
 // solo se exponen al entrar como Admin con el PIN de debug (9999).
 // Los flags de modo libre arrancan en false -> comportamiento productivo.
 // ════════════════════════════════════════════════════════════════════
-#define WT_DEBUG
+// #define WT_DEBUG   // Banco de pruebas / modo libre. Off en liberación productiva.
 
 #define FW_VERSION "2.9"
 
@@ -77,16 +76,10 @@ HardwareSerial &Tracker = Serial2;
 #define DEF_IGN_OFF     "IGN_OFF"
 #define DEF_GEO_IN      "ZonaSegura_ON"
 #define DEF_GEO_OUT     "ZonaSegura_OFF"
-#define DEF_REENABLE    "DISABLE_CUT"
 #define DEF_CMD_CUT_ON  "AT+GTDOS=gv75cg,0,3,1,1,0,0,0,,2,0,0,0,0,,3,0,0,0,0,,0,0,5,,,,FFFF$"
 #define DEF_CMD_CUT_OFF "AT+GTDOS=gv75cg,0,3,1,0,0,0,0,,2,0,0,0,0,,3,0,0,0,0,,0,0,5,,,,FFFF$"
-#define DEF_CMD_ACK     "OK"
 #define DEF_KA_ON       30     // segundos entre keep-alive con ignición ON
 #define DEF_KA_OFF      300    // segundos entre keep-alive con ignición OFF
-
-// Comandos de standby que el tracker envía por serial (no configurables).
-#define MSG_STANDBY_OFF "WT_DISABLE"   // entra en standby
-#define MSG_STANDBY_ON  "WT_ENABLE"    // sale de standby
 
 // ════════════════════════════════════════════════════════════════════
 // BLE — Nordic UART Service
@@ -111,12 +104,10 @@ uint32_t g_baud       = DEF_BAUD;
 String   g_profile    = DEF_PROFILE;   // "" = sin perfil (dispara AUTO_DETECT)
 String   g_cmdCutOn   = DEF_CMD_CUT_ON;
 String   g_cmdCutOff  = DEF_CMD_CUT_OFF;
-String   g_cmdAck     = DEF_CMD_ACK;
 String   g_ignOnStr   = DEF_IGN_ON;
 String   g_ignOffStr  = DEF_IGN_OFF;
 String   g_geoInStr   = DEF_GEO_IN;
 String   g_geoOutStr  = DEF_GEO_OUT;
-String   g_reEnableStr= DEF_REENABLE;
 uint32_t g_kaOn       = DEF_KA_ON;
 uint32_t g_kaOff      = DEF_KA_OFF;
 
@@ -275,12 +266,10 @@ static void loadConfig() {
   g_profile     = g_prefs.getString("prof",   DEF_PROFILE);
   g_cmdCutOn    = g_prefs.getString("cOn",    DEF_CMD_CUT_ON);
   g_cmdCutOff   = g_prefs.getString("cOff",   DEF_CMD_CUT_OFF);
-  g_cmdAck      = g_prefs.getString("ack",    DEF_CMD_ACK);
   g_ignOnStr    = g_prefs.getString("ignOn",  DEF_IGN_ON);
   g_ignOffStr   = g_prefs.getString("ignOff", DEF_IGN_OFF);
   g_geoInStr    = g_prefs.getString("geoIn",  DEF_GEO_IN);
   g_geoOutStr   = g_prefs.getString("geoOut", DEF_GEO_OUT);
-  g_reEnableStr = g_prefs.getString("reEn",   DEF_REENABLE);
   g_kaOn        = g_prefs.getUInt  ("kaOn",   DEF_KA_ON);
   g_kaOff       = g_prefs.getUInt  ("kaOff",  DEF_KA_OFF);
   g_enabled     = g_prefs.getBool  ("en",     true);
@@ -364,7 +353,6 @@ static String buildProfileJson() {
   j += "\"override\":" + String(g_cutDisabled ? "true" : "false") + ",";
   j += "\"cut_on\":\"" + esc(g_cmdCutOn) + "\",";
   j += "\"cut_off\":\"" + esc(g_cmdCutOff) + "\",";
-  j += "\"ack\":\"" + esc(g_cmdAck) + "\",";
   j += "\"ign_on\":\"" + esc(g_ignOnStr) + "\",";
   j += "\"ign_off\":\"" + esc(g_ignOffStr) + "\",";
   j += "\"geo_in\":\"" + esc(g_geoInStr) + "\",";
@@ -375,18 +363,12 @@ static String buildProfileJson() {
   return j;
 }
 
-// JSON corto de latido (KA) — mensaje periódico por GTDAT.
-static String buildKaJson() {
-  uint32_t iv = g_ignOn ? g_kaOn : g_kaOff;
-  String j = "{";
-  j += "\"type\":\"ka\",";
-  j += "\"mac\":\"" + getBleMacString() + "\",";
-  j += "\"name\":\"" + String(g_devName) + "\",";
-  j += "\"app_link\":" + String(gClientConnected ? "true" : "false") + ",";
-  j += "\"gps_link\":" + String(g_serRxLines > 0 ? "true" : "false") + ",";
-  j += "\"interval\":" + String(iv);
-  j += "}";
-  return j;
+// Latido KA (sin JSON): mac|name|enabled(1|0). MAC sin ':' y separador '|'
+// (evita comas del campo Data de AT+GTDAT y símbolos no compatibles con la plataforma).
+static String buildKa() {
+  String mac = getBleMacString();
+  mac.replace(":", "");
+  return mac + "|" + String(g_devName) + "|" + (g_enabled ? "1" : "0");
 }
 
 #ifdef WT_DEBUG
@@ -476,7 +458,7 @@ static void setIgnition(bool on) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// STANDBY — controlado por el tracker (WT_DISABLE / WT_ENABLE por serial)
+// STANDBY — vía config serial (clave 3) o BLE
 // ════════════════════════════════════════════════════════════════════
 static void enterStandby() {
   if (!g_enabled) return;
@@ -511,7 +493,7 @@ static void sendGtdat(const String& payload) {
 
 // ════════════════════════════════════════════════════════════════════
 // LATIDO PERIÓDICO (KA, V2.9) — intervalo dual según ignición.
-//   Emite buildKaJson() por GTDAT cada ka_on / ka_off segundos
+//   Emite buildKa() por GTDAT cada ka_on / ka_off segundos
 //   (0 = deshabilitado). El profile completo se envía bajo pedido (>REPORT).
 // ════════════════════════════════════════════════════════════════════
 static void pumpKeepAlive() {
@@ -519,7 +501,7 @@ static void pumpKeepAlive() {
   if (secs == 0) return;    // 0 = deshabilitado
   if ((millis() - g_lastKa) < (secs * 1000UL)) return;
   g_lastKa = millis();
-  sendGtdat(buildKaJson());
+  sendGtdat(buildKa());
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -578,7 +560,36 @@ static bool isPrintableLine(const String& s) {
   return true;
 }
 
-static void handleInternal(String cmd, Source src);   // fwd
+static void handleInternal(String cmd);   // fwd
+
+// ════════════════════════════════════════════════════════════════════
+// CONFIG REMOTA DESDE EL GPS — formato "<clave>|<valor>"
+//   Llega por serial (el backend la manda con AT+GTDAT tipo 1). Sin auth:
+//   el GPS es un componente cableado y confiable. Diccionario de claves:
+//     1  name    (texto, <24)
+//     2  ka_on   (seg, intervalo del KA con ignición ON)
+//     3  enabled (0|1, standby)
+//     4  profile (texto)
+//   Ej: "1|PWWS63" renombra; "2|3600" pone el KA (ign ON) a 1 hora.
+// ════════════════════════════════════════════════════════════════════
+static bool applySerialConfig(const String& line) {
+  int sep = line.indexOf('|');
+  if (sep <= 0) return false;
+  for (int i = 0; i < sep; i++) if (!isDigit(line[i])) return false;
+  int    key = line.substring(0, sep).toInt();
+  String val = line.substring(sep + 1); val.trim();
+  if (val.length() == 0) return false;
+
+  switch (key) {
+    case 1: if (val.length() < 24) { saveName(val); configureAdv(); } break;
+    case 2: g_kaOn = (uint32_t)val.toInt(); setCfgU32("kaOn", g_kaOn); break;
+    case 3: { bool en = (val.toInt() != 0); if (en) exitStandby(); else enterStandby(); } break;
+    case 4: g_profile = val; setCfgStr("prof", g_profile); break;
+    default: return false;   // clave desconocida
+  }
+  if (g_serMon) reply(String("<CFG ") + key + "=" + val + "\n");
+  return true;
+}
 
 static void processSerialLine(const String& line) {
   if (line.length() == 0) return;
@@ -598,12 +609,9 @@ static void processSerialLine(const String& line) {
     }
   }
 
-  // Comando estructurado por serial (>...): dispatcher con whitelist.
-  if (line[0] == '>') { handleInternal(line, SRC_SERIAL); return; }
-
-  // Standby controlado por el tracker.
-  if (line.indexOf(MSG_STANDBY_OFF) >= 0) { enterStandby(); return; }
-  if (line.indexOf(MSG_STANDBY_ON)  >= 0) { exitStandby();  return; }
+  // Desde el GPS solo se acepta config "<clave>|<valor>" y (más abajo) los
+  // tokens de ignición/geocerca. Comandos ">" u otra cosa se ignoran.
+  if (isDigit(line[0]) && applySerialConfig(line)) return;
 
   bool evChanged = false;
   if      (line.indexOf(g_ignOnStr)  >= 0) { setIgnition(true);  evChanged = true; }
@@ -611,8 +619,6 @@ static void processSerialLine(const String& line) {
 
   if      (line.indexOf(g_geoInStr)  >= 0) { g_inGeo = true;  g_geoKnown = true; evaluate(); saveState(); evChanged = true; }
   else if (line.indexOf(g_geoOutStr) >= 0) { g_inGeo = false; g_geoKnown = true; evaluate(); saveState(); evChanged = true; }
-
-  if (line.indexOf(g_reEnableStr) >= 0) { disableCut("serial"); evChanged = true; }
 
   if (evChanged) {
     sendStatusBle();
@@ -636,23 +642,16 @@ static void pumpSerial() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// DISPATCHER DE COMANDOS (app/tracker -> ESP)
-//   src = SRC_BLE    -> set completo (con auth donde aplica)
-//   src = SRC_SERIAL -> whitelist; el resto se ignora en silencio
+// DISPATCHER DE COMANDOS BLE (app -> ESP)
+//   Solo se invoca desde el canal BLE. Por serial (GPS) NO se aceptan
+//   comandos ">": ese flujo usa exclusivamente "<clave>|<valor>" + los
+//   tokens de ignición/geocerca (ver processSerialLine).
 // ════════════════════════════════════════════════════════════════════
-static void handleInternal(String cmd, Source src) {
+static void handleInternal(String cmd) {
   cmd.trim();
   if (cmd.length() == 0) return;
-  Serial.printf("[RX %s] %s\n", src == SRC_BLE ? "APP" : "SER", cmd.c_str());
+  Serial.printf("[RX APP] %s\n", cmd.c_str());
   cmd.remove(0, 1); cmd.trim();   // quita '>'
-
-  // Por serial el tracker no puede generar HMAC: solo lectura no sensible.
-  if (src == SRC_SERIAL) {
-    if (cmd.equalsIgnoreCase("GET_PROFILE")) { reply(String("<PROFILE ") + buildProfileJson() + "\n"); return; }
-    if (cmd.equalsIgnoreCase("STATUS"))      { sendStatusBle(); return; }
-    if (cmd.equalsIgnoreCase("VERSION"))     { reply(String("<VERSION fw=") + FW_VERSION + " mac=" + getBleMacString() + "\n"); return; }
-    return;   // cualquier otro comando por serial se ignora en silencio
-  }
 
   // ───────────────────────── Canal BLE ─────────────────────────
   if (cmd.equalsIgnoreCase("PING")) {
@@ -867,7 +866,7 @@ static void handleInternal(String cmd, Source src) {
 class RxCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* chr, NimBLEConnInfo& info) override {
     std::string v = chr->getValue();
-    if (!v.empty() && v[0] == '>') handleInternal(String(v.c_str()), SRC_BLE);
+    if (!v.empty() && v[0] == '>') handleInternal(String(v.c_str()));
   }
 };
 class ServerCallbacks : public NimBLEServerCallbacks {

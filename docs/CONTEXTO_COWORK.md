@@ -45,26 +45,27 @@ configurado; inicializa el BLE (NimBLE, MTU 247, servicio NUS); publica el
   AT configurable `cmd_cut_on` / `cmd_cut_off` (por defecto `AT+GTDOS=...` GV75CG).
 - La app solo **deshabilita** (`>DISABLECUT`). Se **re-arma** solo tras un ciclo
   de ignición (arrancar y volver a apagar) o con `>ARMCUT` (Admin).
-- Un mensaje serial del GPS (`re_enable_str`, por defecto `DISABLE_CUT`) también
-  deshabilita.
 - **Sin heartbeat**: al desconectar la app, el ESP mantiene el último estado.
 - Estado (ignición / geocerca / override / viaje) **persiste en NVS**.
 
 ### 3.3 Lectura del GPS (parser serial)
-Lee líneas de Serial2 y busca tokens configurables: `IGN_ON`/`IGN_OFF`,
-`ZonaSegura_ON`/`ZonaSegura_OFF`, y `DISABLE_CUT`. Ante un evento reconocido
-recalcula el corte y notifica el estado por BLE. Las líneas no imprimibles (ruido
-del bus) se descartan.
+Desde el GPS solo se aceptan dos tipos de entrada; el resto (incl. comandos `>`)
+se ignora. (a) Tokens de estado configurables: `IGN_ON`/`IGN_OFF`,
+`ZonaSegura_ON`/`ZonaSegura_OFF`. (b) Config remota `clave|valor` (la manda la
+plataforma con `AT+GTDAT` tipo 1): `1`=name, `2`=ka_on(seg), `3`=enabled(0/1),
+`4`=profile. Ante un evento de estado recalcula el corte y notifica por BLE. Las
+líneas no imprimibles (ruido del bus) se descartan.
 
-### 3.4 Standby (controlado por el GPS)
-Comandos por serial `WT_DISABLE` / `WT_ENABLE`. En standby el ESP **ignora las
-acciones de corte** (responde `<ERR device_disabled` por BLE) pero el keep-alive
-sigue. El estado `enabled` persiste en NVS.
+### 3.4 Standby
+Vía config serial (`clave 3`, `0`=standby / `1`=operativo) o BLE. En standby el ESP
+**ignora las acciones de corte** (responde `<ERR device_disabled` por BLE) pero el
+keep-alive sigue. El estado `enabled` persiste en NVS.
 
-### 3.5 Keep-alive
-Envía periódicamente al GPS `WT_ALIVE,<mac>,<fw>,<relay>,<profile>` para que el
-GPS lo reenvíe a plataforma. Intervalo dual: `ka_on` (ignición ON, def. 30 s) /
-`ka_off` (OFF, def. 300 s).
+### 3.5 Latido KA
+Envía periódicamente al GPS `mac|name|enabled` (MAC sin `:`, separador `|`)
+envuelto en `AT+GTDAT=gv75cg,2,,<payload>,0,,,,FFFF$` para que el GPS lo reenvíe a
+plataforma. Intervalo dual: `ka_on` (ignición ON, def. 30 s) / `ka_off` (OFF, def.
+300 s). El profile completo se empuja bajo pedido con `>REPORT` (BLE).
 
 ### 3.6 AUTO_DETECT de perfil (no bloqueante)
 FSM en `loop()` que prueba comandos de identificación por modelo y fija el perfil

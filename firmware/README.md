@@ -33,5 +33,5 @@ referencia histórica.
 | Salida local | Sí (GPIO23; variante con GPIO21) | No |
 | Configuración | Hardcodeada | En NVS, editable en runtime |
 | Visibilidad BLE | Nombre visible | Advertising anónimo |
-| Estado al GPS | — | Keep-alive `WT_ALIVE` |
-| Standby remoto | — | `WT_DISABLE` / `WT_ENABLE` |
+| Estado al GPS | — | Latido KA (`mac|name|enabled`) por GTDAT |
+| Config remota | — | `clave|valor` por serial (name, ka_on, enabled, profile) |

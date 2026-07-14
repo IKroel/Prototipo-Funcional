@@ -171,8 +171,8 @@ sequenceDiagram
 **6 · Parsear el estado.** `>GET_PROFILE` → `<PROFILE {json}` con la config +
 estado completos (`type:"profile"`). `>STATUS` → `<STATUS name=… en=… ign=… geo=…
 cut=… override=…` (clave=valor, no JSON). El latido periódico KA
-(`type:"ka"`) NO viaja por BLE: sale por serial al GPS; solo es visible por BLE en
-el monitor admin con `>SERMON 1` (llega como eco `<TXGPS AT+GTDAT=…`).
+(`mac|name|enabled`) NO viaja por BLE: sale por serial al GPS; solo es visible por
+BLE en el monitor admin con `>SERMON 1` (llega como eco `<TXGPS AT+GTDAT=…`).
 
 > [!TIP]
 > Para probar sin escribir código: **nRF Connect** o **Serial Bluetooth Terminal**
@@ -221,7 +221,7 @@ el monitor admin con `>SERMON 1` (llega como eco `<TXGPS AT+GTDAT=…`).
 </details>
 
 <details>
-<summary><b>Debug / Banco de pruebas</b> 🧪 <i>(exigen auth; se exponen solo con PIN 9999)</i></summary>
+<summary><b>Debug / Banco de pruebas</b> 🧪 <i>(solo si se compila con <code>WT_DEBUG</code>; en la build productiva NO existen)</i></summary>
 
 | Comando | Función |
 |---------|---------|
@@ -260,26 +260,37 @@ el monitor admin con `>SERMON 1` (llega como eco `<TXGPS AT+GTDAT=…`).
 
 ## 🔁 8 · Comunicación serial ESP32 ↔ GPS
 
-**El ESP escucha del GPS** (tokens configurables):
+Desde el GPS **solo** se aceptan dos tipos de entrada; cualquier otra cosa
+(incluidos comandos `>`) se ignora en silencio.
+
+**a) Tokens de estado** (configurables) que disparan la lógica de corte:
 
 | Token (default) | Evento |
 |-----------------|--------|
 | `IGN_ON` / `IGN_OFF` | Ignición encendida / apagada. |
 | `ZonaSegura_ON` / `ZonaSegura_OFF` | Dentro / fuera de geocerca. |
-| `DISABLE_CUT` | La ESP32 pide deshabilitar el corte. |
-| `WT_DISABLE` / `WT_ENABLE` | Standby: apaga / reactiva el gateway. |
+
+**b) Config remota** `clave|valor` (la plataforma la manda con `AT+GTDAT` **tipo 1**,
+que el GV75CG saca por su serial). Persiste en NVS:
+
+| Clave | Parámetro | Ejemplo |
+|:--:|-----------|---------|
+| `1` | nombre interno (`<24`) | `1|PWWS63` |
+| `2` | intervalo KA con ignición ON (seg) | `2|3600` → 1 h |
+| `3` | operativo / standby (`1`/`0`) | `3|0` |
+| `4` | perfil del tracker | `4|gv75cg` |
 
 **El ESP envía al GPS:**
 
 - ⛔ **Corte:** `cmd_cut_on` / `cmd_cut_off` (AT, por defecto `AT+GTDOS=gv75cg,…`).
-- 💓 **Latido KA (V2.9):** JSON de salud envuelto en `AT+GTDAT=gv75cg,2,,<json>,0,,,,FFFF$`
-  para que el GPS lo reenvíe a plataforma. Intervalo dual: `ka_on` (ign ON, def. 30 s) /
-  `ka_off` (OFF, def. 300 s). Payload:
-  `{"type":"ka","mac":…,"name":…,"app_link":bool,"gps_link":bool,"interval":s}`.
-- 📋 **Profile bajo pedido:** con `>REPORT` se empuja el JSON completo (`type:"profile"`)
-  por el mismo GTDAT. El campo `type` distingue latido vs profile en plataforma.
-- ⚠️ **Pendiente:** el JSON tiene comas y el campo de datos de GTDAT es delimitado por
-  comas — validar contra el manual @Track del GV75CG (puede requerir payload sin comas).
+- 💓 **Latido KA:** salud envuelta en `AT+GTDAT=gv75cg,2,,<payload>,0,,,,FFFF$` para
+  que el GPS la reenvíe a plataforma. Intervalo dual: `ka_on` (ign ON, def. 30 s) /
+  `ka_off` (OFF, def. 300 s). Payload **sin JSON**, separador `|` y MAC sin `:`:
+  `mac|name|enabled` (ej. `AABBCCDDEEFF|WT-EEFF|1`). El `|` y la MAC sin `:` evitan
+  chocar con las comas del campo Data del GTDAT.
+- 📋 **Profile bajo pedido:** con `>REPORT` (BLE) se empuja el JSON completo
+  (`type:"profile"`) por el mismo GTDAT. ⚠️ Ese JSON **sí lleva comas** → validar
+  contra el manual @Track del GV75CG (puede requerir payload sin comas).
 
 ---
 
@@ -289,8 +300,8 @@ Todos los parámetros de operación viven en NVS con valores por
 defecto (`DEF_*`) que solo aplican al primer arranque; luego se editan en runtime
 con los setters `>SET_*` o desde la app.
 
-> Parámetros: `baud`, `profile`, `cmd_cut_on/off`, `cmd_ack`, tokens de
-> ignición/geocerca, `re_enable_str`, intervalos `ka_on`/`ka_off`, `enabled`.
+> Parámetros: `baud`, `profile`, `cmd_cut_on/off`, tokens de
+> ignición/geocerca, intervalos `ka_on`/`ka_off`, `enabled`, `name`.
 
 ---
 
