@@ -65,9 +65,8 @@ BLE, se autentica y puede **deshabilitar** el corte.
 Prototipo Funcional/
 ├── README.md                      
 ├── docs/
-│   ├── CONTEXTO_COWORK.md         Arquitectura y Protocolo
 │   ├── INTEGRACION_BLE.md         Guía para integrar la auth BLE en una app
-│   ├── README_BUILD.md            Build (Flash Encryption, etc.)
+│   ├── README_BUILD.md            Build del firmware, provisioning y Flash Encryption
 ├── firmware/
 │   ├── README.md                  Índice de versiones de firmware
 │   ├── v1/                        Legacy (NO usar)
