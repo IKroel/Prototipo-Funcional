@@ -1,4 +1,4 @@
-# Instructivo de uso — App Llave Virtual BLE
+# Instructivo de uso — WTKey
 ## Modo Producción · Operación en terreno
 
 Manual para el personal de instalación. Explica cómo conectar a un equipo, leer su estado y liberar el vehículo desde el teléfono.
@@ -7,7 +7,7 @@ Manual para el personal de instalación. Explica cómo conectar a un equipo, lee
 
 ## 1. ¿Qué es?
 
-Es la **Llave Virtual BLE de Wisetrack**. Se comunica por **Bluetooth** con el accesorio instalado en el vehículo y permite **liberar o cortar el combustible** directamente desde el teléfono. Funciona de forma **local: sin servidor ni conexión a internet**.
+Es **WTKey**, la llave virtual BLE de Wisetrack. Se comunica por **Bluetooth** con el accesorio instalado en el vehículo y permite **liberar o cortar el combustible** directamente desde el teléfono. Funciona de forma **local: sin servidor ni conexión a internet**.
 
 La app tiene dos pestañas en la barra inferior:
 
@@ -100,4 +100,4 @@ Al conectarte a un equipo asignado verás un panel oscuro con el estado actual d
 
 ---
 
-*Wisetrack · Llave Virtual BLE — Modo Producción.*
+*Wisetrack · WTKey — Modo Producción.*

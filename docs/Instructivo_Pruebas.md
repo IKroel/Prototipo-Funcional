@@ -1,4 +1,4 @@
-# Instructivo de uso — App Llave Virtual BLE
+# Instructivo de uso — WTKey
 ## Modo Pruebas · Banco de laboratorio y diagnóstico
 
 Manual para el personal de laboratorio y validación de equipos. El Modo Pruebas agrega herramientas para **simular escenarios**, una **consola BLE** y el manejo de la **clave maestra**, sin cambiar la forma de probar el corte (se prueba con los botones reales).
@@ -70,4 +70,4 @@ La clave maestra es sensible: permite autenticar los equipos. **No la compartas 
 
 ---
 
-*Wisetrack · Llave Virtual BLE — Modo Pruebas.*
+*Wisetrack · WTKey — Modo Pruebas.*

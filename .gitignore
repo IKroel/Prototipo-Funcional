@@ -21,6 +21,7 @@ Thumbs.db
 # App Flutter de referencia — fuera de scope del repo (contiene el master
 # de prototipo; se mantiene en repo privado aparte)
 wt_gateway_app/
+wtkey/
 
 # Secretos locales — el master NUNCA se versiona (ver docs/INTEGRACION_BLE.md)
 **/config.local.dart
