@@ -1,55 +1,5 @@
-/*
-  Wisetrack ESP32 Gateway — llave virtual
-  ════════════════════════════════════════
-  Hardware:
-    GPIO 23       → módulo relé → FMC130 DIN2 (pulso negativo a GND vehículo)
-    GPIO 16 / 17  ← Serial2 RX/TX → FMC130
-
-  Relé (módulo active-LOW):
-    HIGH (RELAY_LOCKED)   = relé desenergizado → DIN2 sin señal → corte activo
-    LOW  (RELAY_UNLOCKED) = relé energizado    → DIN2 con señal → combustible libre
-    (estado seguro = corte = HIGH; conviene pull-up externo a 3V3 para el boot)
-
-  Librería requerida: NimBLE-Arduino (h2zero) v1.4.x
-
-  ── Protocolo BLE (Nordic UART Service) ─────────────────────────────
-  Infraestructura:
-    >PING                   → <PONG
-    >GPIO MODE <pin> OUT|IN|IN_PU|IN_PD
-    >GPIO SET  <pin> <0|1>
-    >GPIO GET  <pin>        → <GPIO <pin>=<val>
-    >GPIO PULSE <pin> <ms>
-    >BAUD <n>
-    >NAME [texto]           → get/set nombre BLE persistido en NVS
-    >STATUS                 → <STATUS name=... session=... relay=<0|1>
-    <texto sin '>'>         → forward verbatim a Serial2 (FMC130)
-
-  Provisionamiento (solo instalador, una vez por dispositivo):
-    >MAC                    → <MAC XX:XX:XX:XX:XX:XX
-    >PROVISION <hex64>      → deriva device_key = HMAC-SHA256(master, MAC)
-                               descarta master, guarda device_key en NVS
-                             → <PROVISION_OK mac=XX:XX:XX:XX:XX:XX
-
-  Sesión (operador):
-    >CHALLENGE              → <CHALLENGE <hex16>  (nonce aleatorio, un solo uso)
-    >AUTH <hex64>           → verifica HMAC-SHA256(device_key, nonce)
-                             → <AUTH_OK | <AUTH_FAIL <razón>
-    >HEARTBEAT              → <HB_OK  (debe llegar antes de hbTimeout)
-    >LOCK                   → bloquea inmediatamente
-    >SESSION                → <SESSION LOCKED|AUTHORIZED
-    >HB_TIMEOUT <ms>        → configura timeout heartbeat (mín. 1000, default 15000)
-
-  ── Derivación de clave ──────────────────────────────────────────────
-    device_key = HMAC-SHA256(MASTER_SECRET, MAC_BLE_bytes[6])
-    MASTER_SECRET vive solo en el servidor y en RAM de la app durante la sesión.
-    El dispositivo almacena únicamente device_key. El master nunca persiste.
-
-  ── Seguridad ────────────────────────────────────────────────────────
-    - GPIO 23 protegido: SET/MODE/PULSE rechazados si no hay sesión activa
-    - Nonce invalidado tras cada intento de AUTH (exitoso o fallido)
-    - Disconnect BLE con sesión activa → bloqueo inmediato
-    - Boot con clave configurada → siempre arranca bloqueado
-*/
+// Wisetrack ESP32 Gateway V1 (legacy) — corte por GPIO23/relé al FMC130.
+// Protocolo BLE, provisión, sesión y seguridad: ver firmware/README.md.
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
@@ -223,12 +173,7 @@ static void getBleMacBytes(uint8_t out[6]) {
 
 
 // ════════════════════════════════════════════════════════════════════
-// PERSISTENCIA NVS
-// Claves almacenadas bajo namespace "wt":
-//   "name"     → nombre BLE del dispositivo
-//   "authkey"  → device_key derivada (32 bytes)
-//   "hbtimeout"→ timeout heartbeat en ms
-//   "r23"      → último estado del relé (0=LOW, 1=HIGH)
+// PERSISTENCIA NVS (namespace "wt": name, authkey, hbtimeout, r23)
 // ════════════════════════════════════════════════════════════════════
 static void loadName() {
   g_prefs.begin("wt", true);
@@ -295,9 +240,7 @@ static void configureAdv() {
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->stop();
 
-  // Paquete principal (≤31 bytes): solo flags + manufacturer data WT.
-  // No incluimos el UUID de 128 bits ni el nombre aquí para no desbordar
-  // el paquete con nombres largos (el servicio sigue disponible vía GATT).
+  // Paquete principal (≤31 bytes): flags + manufacturer data WT.
   std::string mfg;
   mfg.push_back((char)0xFF); mfg.push_back((char)0xFF);
   mfg.push_back('W'); mfg.push_back('T');
@@ -524,8 +467,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
   void onDisconnect(NimBLEServer* s, NimBLEConnInfo& connInfo, int reason) override {
     gClientConnected = false;
     Serial.println("[BLE] Desconectado");
-    // No se bloquea de inmediato: si estaba autorizado, se reinicia el conteo
-    // para que el watchdog baje la salida a LOW tras DEFAULT_HB_TIMEOUT (10 s).
+    // No bloquea de inmediato: reinicia el conteo; el watchdog corta tras hbTimeout.
     if (g_session == SESSION_AUTHORIZED) g_lastHeartbeat = millis();
     NimBLEDevice::startAdvertising();
   }

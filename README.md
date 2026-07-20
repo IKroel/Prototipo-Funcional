@@ -8,7 +8,7 @@
 
 <br/>
 
-![Firmware](https://img.shields.io/badge/firmware-v2.9-blue?style=for-the-badge)
+![Firmware](https://img.shields.io/badge/firmware-v2.9.5-blue?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/ESP32-NimBLE-informational?style=for-the-badge&logo=espressif)
 ![GPS](https://img.shields.io/badge/GPS-GV75CG-success?style=for-the-badge)
 
@@ -55,7 +55,7 @@ BLE, se autentica y puede **deshabilitar** el corte.
 |:--:|------|
 | ✅ | Prototipo (Modulo ESP32 + Conversor Serial + GPS). |
 | ✅ | Compatibilidad con GPS: **GV75CG**. |
-| ✅ | Firmware **V2.9**. |
+| ✅ | Firmware **V2.9.5**. |
 
 ---
 
@@ -82,7 +82,7 @@ Prototipo Funcional/
 
 | Componente | Detalle |
 |------------|---------|
-| 🔧 **ESP32** | Corre el firmware `wt_gateway_v2_serial` (fw 2.9). |
+| 🔧 **ESP32** | Corre el firmware `wt_gateway_v2_serial` (fw 2.9.5). |
 | 🛰️ **GPS GV75CG** | Ejecuta el corte por su salida digital; recibe comandos AT por serial. |
 | 🔀 **MAX3232** | Conversor RS-232 ↔ TTL entre ESP32 y GPS. |
 | 🔋 **Fuente OKI** | DC-DC para alimentación. |
@@ -241,7 +241,7 @@ BLE en el monitor admin con `>SERMON 1` (llega como eco `<TXGPS AT+GTDAT=…`).
 | Mensaje | Significado |
 |---------|-------------|
 | `<PONG` | Respuesta a `>PING`. |
-| `<VERSION fw=2.9 mac=…` | Versión y MAC. |
+| `<VERSION fw=2.9.5 mac=…` | Versión y MAC. |
 | `<PROFILE {json}` | Configuración + estado (respuesta a `>GET_PROFILE`). |
 | `<PROFILE_DETECTED <name>` | Perfil detectado por AUTO_DETECT. |
 | `<AUTO_DETECT start\|none` | Progreso/resultado de la detección. |

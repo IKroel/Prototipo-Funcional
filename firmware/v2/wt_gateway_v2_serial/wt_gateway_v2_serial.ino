@@ -1,41 +1,5 @@
-/*
-  Wisetrack ESP32 Gateway — V2 (corte por ignición/geocerca)
-  ════════════════════════════════════════════════════════════════════
-  FIRMWARE ÚNICO V2 — "SOLO SERIAL".
-  El corte lo ejecuta el tracker (GV75CG por defecto) en su DOUT,
-  comandado por serial.
-
-  Lógica (decisión en el ESP):
-    - CORTE      si ignición OFF Y fuera de geocerca.
-    - Sin corte  si ignición ON  o dentro de geocerca.
-    Al cambiar de estado, el ESP envía por serial al tracker:
-    - La app solo DESHABILITA el corte (>DISABLECUT). Se re-arma tras un
-      ciclo de ignición (arrancar y volver a apagar) o con >ARMCUT (Admin).
-    - Al desconectar la app, se mantiene el último estado.
-    - Se conserva la autenticación BLE: solo un cliente autenticado deshabilita.
-
-  V2.8:
-    1. Advertising anónimo: sin nombre ni scan response; solo Manufacturer
-       Data 0xFFFF+W+T+0x01. Scanners genéricos ven "Unknown Device".
-    3. Todos los parámetros viven en NVS (Preferences). Sin hardcode: los
-       #define DEF_* son solo valores por defecto al primer arranque.
-    4. Comandos ">" solo por BLE. Por serial (GPS) solo se acepta config
-       "<clave>|<valor>" y los tokens de ignición/geocerca; el resto se ignora.
-    6. Standby vía config serial (clave 3) o BLE. En standby se ignoran
-       comandos de acción pero el keep-alive (KA) sigue.
-    7. Latido KA periódico al tracker con intervalo único (g_ka).
-    8. Comando >GET_PROFILE: JSON con configuración + estado en vivo.
-    5. AUTO_DETECT de perfil no bloqueante (FSM en loop()).
-
-  Hardware:
-    Serial2 (GPIO23 RX / GPIO22 TX) <-> tracker vía MAX3232 (RS-232<->TTL).
-
-  Build — Flash Encryption Release Mode (antes del primer release a prod):
-    Ver docs/README_BUILD.md. Activarlo es IRREVERSIBLE: perder el
-    binario firmado inutiliza el chip. Tener el flujo de firma listo antes.
-
-  Librería: NimBLE-Arduino (h2zero) v1.4.x
-*/
+// Wisetrack ESP32 Gateway V2 — corte por serial (AT) al tracker.
+// Arquitectura, protocolo, build y seguridad: ver README.md, firmware/README.md y docs/.
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
@@ -46,15 +10,13 @@
 #include "driver/gpio.h"
 
 // ════════════════════════════════════════════════════════════════════
-// FIRMWARE ÚNICO V2 PRODUCTIVO
-// Los comandos de diagnóstico (>TESTGPS / >SIM / >SET* / >RELAX* / >DUMP)
-// vienen SIEMPRE compilados pero exigen sesión BLE autenticada. En la app
-// solo se exponen al entrar como Admin con el PIN de debug (9999).
-// Los flags de modo libre arrancan en false -> comportamiento productivo.
+// DIAGNÓSTICO Y MODO LIBRE
+// Los comandos de diagnóstico compilan siempre pero exigen sesión autenticada.
+// Los flags de modo libre arrancan en false (comportamiento productivo).
 // ════════════════════════════════════════════════════════════════════
-// #define WT_DEBUG   // Banco de pruebas / modo libre. Off en liberación productiva.
+#define WT_DEBUG   // Modo libre / banco de pruebas. Comentar para build productivo.
 
-#define FW_VERSION "2.9"
+#define FW_VERSION "2.9.5"
 
 // ════════════════════════════════════════════════════════════════════
 // HARDWARE
@@ -63,12 +25,8 @@
 #define UART_RX_PIN    23
 HardwareSerial &Tracker = Serial2;
 
-// Esta variante NO usa salida local de corte. El corte lo ejecuta el
-// tracker por su DOUT, comandado por serial (cmd_cut_on / cmd_cut_off).
-
 // ════════════════════════════════════════════════════════════════════
-// VALORES POR DEFECTO (solo se aplican al primer arranque; luego viven
-// en NVS y se editan en runtime con los setters >SET* o desde la app).
+// VALORES POR DEFECTO (viven en NVS tras el primer arranque)
 // ════════════════════════════════════════════════════════════════════
 #define DEF_BAUD        115200
 #define DEF_PROFILE     "gv75cg"
@@ -119,6 +77,10 @@ bool g_cutDisabled = false;   // corte deshabilitado por app/serial (override)
 bool g_tripStarted = false;   // para re-armar tras un ciclo de ignición
 int  g_lastCut     = -1;      // último estado enviado: -1 desc, 0 sin corte, 1 corte
 
+// Último estado real recibido por serial (no el simulado); base al salir de debug.
+bool g_serIgnOn = false, g_serIgnKnown = false;
+bool g_serInGeo = false, g_serGeoKnown = false;
+
 // Autenticación BLE
 uint8_t g_nonce[NONCE_LEN] = {0};
 bool    g_nonceValid       = false;
@@ -144,13 +106,20 @@ uint32_t g_lastSerEcho = 0;
 bool g_dbgRelaxGeo   = false;
 bool g_dbgAlwaysSend = false;
 bool g_dbgIgnoreOvr  = false;
+
+// Snapshot del estado operativo para restaurar al salir del modo debug.
+// La app hace >SNAPSHOT al entrar y >RESTORE al salir; además se restaura
+// solo en onDisconnect si quedó pendiente (app cerrada / BLE caído).
+struct StateSnapshot {
+  bool ignOn, ignKnown, inGeo, geoKnown, cutDisabled, tripStarted;
+};
+StateSnapshot g_snap;
+bool g_hasSnapshot = false;
 #endif
 
 // ════════════════════════════════════════════════════════════════════
 // AUTO_DETECT de perfil — FSM no bloqueante
-// Cada perfil define un comando de identificación y un token esperado en
-// la respuesta del tracker. TODO: completar idCmd/expect reales por
-// modelo (Queclink/Teltonika/Syrus/TRAX). Aquí va el conocido (gv75cg).
+// TODO: completar idCmd/expect por modelo (Teltonika/Syrus/TRAX).
 // ════════════════════════════════════════════════════════════════════
 struct ProfileDef {
   const char* name;
@@ -241,6 +210,11 @@ static void saveName(const String& name) {
   strncpy(g_devName, name.c_str(), sizeof(g_devName) - 1);
   g_devName[sizeof(g_devName) - 1] = 0;
 }
+// Borra el nombre guardado y vuelve al genérico WT-xxxx (usado al restablecer).
+static void resetNameToDefault() {
+  g_prefs.begin("wt", false); g_prefs.remove("name"); g_prefs.end();
+  loadName();   // sin nombre guardado -> genera "WT-xxxx" desde la MAC
+}
 static void loadKey() {
   g_prefs.begin("wt", true);
   if (g_prefs.getBytesLength("authkey") == 32) {
@@ -301,6 +275,9 @@ static void loadState() {
   g_cutDisabled = g_prefs.getBool("ovr",  false);
   g_tripStarted = g_prefs.getBool("trip", false);
   g_prefs.end();
+  // Semilla de los trackers de serial con el último estado persistido.
+  g_serIgnOn = g_ignOn; g_serIgnKnown = g_ignKnown;
+  g_serInGeo = g_inGeo; g_serGeoKnown = g_geoKnown;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -359,8 +336,7 @@ static String buildProfileJson() {
   return j;
 }
 
-// Latido KA (sin JSON): mac|name|enabled(1|0). MAC sin ':' y separador '|'
-// (evita comas del campo Data de AT+GTDAT y símbolos no compatibles con la plataforma).
+// Latido KA: mac|name|enabled, sin ':' ni comas (compatibilidad GTDAT).
 static String buildKa() {
   String mac = getBleMacString();
   mac.replace(":", "");
@@ -436,6 +412,30 @@ static void armCut() {
   saveState();
 }
 
+#ifdef WT_DEBUG
+// Guarda el estado operativo actual para poder restaurarlo al salir de debug.
+static void takeSnapshot() {
+  g_snap = {g_ignOn, g_ignKnown, g_inGeo, g_geoKnown, g_cutDisabled, g_tripStarted};
+  g_hasSnapshot = true;
+  Serial.println("[DBG] Snapshot tomado");
+}
+// Restaura al salir de debug: ignición/geocerca vuelven a lo ÚLTIMO recibido
+// por serial (GPS real); si nunca llegó nada por el bus, usa el snapshot
+// previo a la conexión. Override/trip (Liberar/Cortar) son acciones reales:
+// no se revierten.
+static void restoreSnapshot() {
+  if (!g_hasSnapshot) return;
+  if (g_serIgnKnown) { g_ignOn = g_serIgnOn; g_ignKnown = true; }
+  else               { g_ignOn = g_snap.ignOn; g_ignKnown = g_snap.ignKnown; }
+  if (g_serGeoKnown) { g_inGeo = g_serInGeo; g_geoKnown = true; }
+  else               { g_inGeo = g_snap.inGeo; g_geoKnown = g_snap.geoKnown; }
+  g_hasSnapshot = false;
+  evaluate();
+  saveState();
+  Serial.println("[DBG] Estado restaurado (último real de serial)");
+}
+#endif
+
 static void setIgnition(bool on) {
   g_ignKnown = true;
   if (on) {
@@ -472,11 +472,7 @@ static void exitStandby() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// GTDAT — envuelve cualquier JSON para que el GV75CG lo reenvíe a
-//   Wisetrack. Se refleja por BLE SOLO en el monitor admin (SERMON on).
-//   NOTA: el campo de datos de GTDAT es delimitado por comas y el JSON
-//   las contiene. Validar contra el manual @Track del GV75CG (puede
-//   requerir payload sin comas o con encoding).
+// GTDAT — envuelve un payload para que el tracker lo reenvíe a plataforma
 // ════════════════════════════════════════════════════════════════════
 static void sendGtdat(const String& payload) {
   String prof = g_profile.length() ? g_profile : String("gv75cg");
@@ -488,9 +484,7 @@ static void sendGtdat(const String& payload) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// LATIDO PERIÓDICO (KA, V2.9) — intervalo único.
-//   Emite buildKa() por GTDAT cada g_ka segundos
-//   (0 = deshabilitado). El profile completo se envía bajo pedido (>REPORT).
+// LATIDO PERIÓDICO (KA) — buildKa() por GTDAT cada g_ka s (0 = off)
 // ════════════════════════════════════════════════════════════════════
 static void pumpKeepAlive() {
   uint32_t secs = g_ka;
@@ -559,14 +553,7 @@ static bool isPrintableLine(const String& s) {
 static void handleInternal(String cmd);   // fwd
 
 // ════════════════════════════════════════════════════════════════════
-// CONFIG REMOTA DESDE EL GPS — formato "<clave>|<valor>"
-//   Llega por serial (el backend la manda con AT+GTDAT tipo 1). Sin auth:
-//   el GPS es un componente cableado y confiable. Diccionario de claves:
-//     1  name    (texto, <24)
-//     2  ka      (seg, intervalo del latido KA)
-//     3  enabled (0|1, standby)
-//     4  profile (texto)
-//   Ej: "1|PWWS63" renombra; "2|3600" pone el KA (ign ON) a 1 hora.
+// CONFIG REMOTA DESDE EL GPS — "<clave>|<valor>" (1=name 2=ka 3=enabled 4=profile)
 // ════════════════════════════════════════════════════════════════════
 static bool applySerialConfig(const String& line) {
   int sep = line.indexOf('|');
@@ -610,11 +597,11 @@ static void processSerialLine(const String& line) {
   if (isDigit(line[0]) && applySerialConfig(line)) return;
 
   bool evChanged = false;
-  if      (line.indexOf(g_ignOnStr)  >= 0) { setIgnition(true);  evChanged = true; }
-  else if (line.indexOf(g_ignOffStr) >= 0) { setIgnition(false); evChanged = true; }
+  if      (line.indexOf(g_ignOnStr)  >= 0) { setIgnition(true);  g_serIgnOn = true;  g_serIgnKnown = true; evChanged = true; }
+  else if (line.indexOf(g_ignOffStr) >= 0) { setIgnition(false); g_serIgnOn = false; g_serIgnKnown = true; evChanged = true; }
 
-  if      (line.indexOf(g_geoInStr)  >= 0) { g_inGeo = true;  g_geoKnown = true; evaluate(); saveState(); evChanged = true; }
-  else if (line.indexOf(g_geoOutStr) >= 0) { g_inGeo = false; g_geoKnown = true; evaluate(); saveState(); evChanged = true; }
+  if      (line.indexOf(g_geoInStr)  >= 0) { g_inGeo = true;  g_geoKnown = true; g_serInGeo = true;  g_serGeoKnown = true; evaluate(); saveState(); evChanged = true; }
+  else if (line.indexOf(g_geoOutStr) >= 0) { g_inGeo = false; g_geoKnown = true; g_serInGeo = false; g_serGeoKnown = true; evaluate(); saveState(); evChanged = true; }
 
   if (evChanged) {
     sendStatusBle();
@@ -639,9 +626,6 @@ static void pumpSerial() {
 
 // ════════════════════════════════════════════════════════════════════
 // DISPATCHER DE COMANDOS BLE (app -> ESP)
-//   Solo se invoca desde el canal BLE. Por serial (GPS) NO se aceptan
-//   comandos ">": ese flujo usa exclusivamente "<clave>|<valor>" + los
-//   tokens de ignición/geocerca (ver processSerialLine).
 // ════════════════════════════════════════════════════════════════════
 static void handleInternal(String cmd) {
   cmd.trim();
@@ -696,7 +680,8 @@ static void handleInternal(String cmd) {
   } else if (cmd.equalsIgnoreCase("UNPROVISION")) {
     if (g_hasAuthKey && !g_authed) { reply("<ERR not_authed\n"); return; }
     clearAuthKey(); g_authed = false;
-    reply("<UNPROVISION_OK\n");
+    resetNameToDefault();   // el equipo vuelve a llamarse WT-xxxx
+    reply(String("<UNPROVISION_OK name=") + g_devName + "\n");
 
   } else if (cmd.startsWith("PROVISION ")) {
     if (g_hasAuthKey) { reply("<ERR already_provisioned\n"); return; }
@@ -844,6 +829,16 @@ static void handleInternal(String cmd) {
   } else if (cmd.equalsIgnoreCase("DUMP")) {
     if (!g_authed) { reply("<ERR not_authed\n"); return; }
     sendDumpBle();
+
+  } else if (cmd.equalsIgnoreCase("SNAPSHOT")) {
+    if (!g_authed) { reply("<ERR not_authed\n"); return; }
+    takeSnapshot();
+    reply("<SNAPSHOT_OK\n");
+
+  } else if (cmd.equalsIgnoreCase("RESTORE")) {
+    if (!g_authed) { reply("<ERR not_authed\n"); return; }
+    restoreSnapshot();
+    reply("<RESTORE_OK\n");
 #endif
 
   } else {
@@ -866,6 +861,10 @@ class ServerCallbacks : public NimBLEServerCallbacks {
   }
   void onDisconnect(NimBLEServer* s, NimBLEConnInfo& info, int reason) override {
     gClientConnected = false; g_authed = false;
+#ifdef WT_DEBUG
+    // Si la sesión de debug no alcanzó a hacer >RESTORE, se restaura solo.
+    if (g_hasSnapshot) restoreSnapshot();
+#endif
     Serial.println("[BLE] Desconectado (se mantiene el estado del corte)");
     NimBLEDevice::startAdvertising();
   }

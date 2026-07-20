@@ -1,29 +1,5 @@
-/*
-  Wisetrack ESP32 — TEST de relé (GPIO 23)
-  ════════════════════════════════════════
-  Versión mínima de prueba: SIN autenticación, SIN sesión, SIN FMC130.
-  Solo permite activar / desactivar la salida GPIO 23 por BLE para
-  validar el cableado del relé y el corte de combustible.
-
-  Hardware (módulo relé active-LOW):
-    GPIO 23 → módulo relé → FMC130 DIN2
-    HIGH (RELAY_LOCKED)   = relé desenergizado → corte activo (seguro)
-    LOW  (RELAY_UNLOCKED) = relé energizado    → combustible libre
-
-  Librería requerida: NimBLE-Arduino (h2zero) v1.4.x
-
-  ── Cómo probar ──────────────────────────────────────────────────────
-  Conéctate con cualquier app de terminal BLE (nRF Connect, Serial
-  Bluetooth Terminal) al dispositivo "WT-TEST-XXYY", servicio Nordic UART.
-  Comandos (con o sin '>'); <RELAY: 1=libre, 0=corte:
-    >ON       → GPIO 23 LOW  (combustible libre)   → <RELAY 1
-    >OFF      → GPIO 23 HIGH (corte activo)         → <RELAY 0
-    >TOGGLE   → invierte el estado                  → <RELAY <0|1>
-    >STATUS   → estado actual                       → <RELAY <0|1>
-    >PING     → prueba de enlace                    → <PONG
-  Arranca en OFF (corte activo) por seguridad. GPIO 23 flota durante el
-  arranque del ESP32: usa un pull-up externo a 3V3 para mantener el corte.
-*/
+// Wisetrack ESP32 — TEST de relé (GPIO23) por BLE, sin auth ni FMC130.
+// Comandos y cableado: ver firmware/README.md.
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
