@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-# ============================================================
-# wt_auth.py — Utilidad de autenticación BLE Wisetrack
-# ============================================================
-# Genera el master, deriva la device_key y firma el nonce para
-# poder probar la interacción con la ESP32 (p. ej. desde nRF
-# Connect) sin necesidad de la app.
-#
-# Regla del firmware:
-#   device_key = HMAC-SHA256(master, MAC_BLE[6 bytes])
-#   token      = HMAC-SHA256(device_key, nonce)[:16]   (16 bytes)
-#   nonce      = 8 bytes  (16 hex chars, llega en <CHALLENGE)
-#   token      = 16 bytes (32 hex chars, se envía en >AUTH)
-# ============================================================
 import argparse
 import hashlib
 import hmac

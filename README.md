@@ -324,18 +324,8 @@ de desarrollo. Con él, la app puede descubrir y comandar **cualquier ESP32 con
 este firmware** (leer no requiere master; comandar sí).
 
 ```bash
-# 1. Generar el master (una vez; compártelo por canal privado, NO lo subas a git)
 python3 tools/wt_auth.py gen-master
-#    -> 64 hex chars (32 bytes)
-
-# 2. Provisionar un equipo (una vez por ESP): por BLE
-#    >PROVISION <master_hex_64>   ->  <PROVISION_OK
-
-# 3. Autenticar en cada conexión:
-#    >CHALLENGE            -> <CHALLENGE <nonce_hex>   (8 bytes)
-#    calcular el token y enviarlo:
 python3 tools/wt_auth.py token --master <hex> --mac AA:BB:CC:DD:EE:FF --nonce <nonce>
-#    >AUTH <token_hex_32>  ->  <AUTH_OK
 ```
 
 Derivación (lo que la app debe implementar):
